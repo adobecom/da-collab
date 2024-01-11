@@ -376,8 +376,6 @@ export class DocRoom {
 
     // `env` is our environment bindings (discussed earlier).
     this.env = env;
-
-    this.connected = [];
   }
 
   // The system will call fetch() whenever an HTTP request is sent to this Object. Such requests
@@ -412,9 +410,7 @@ export class DocRoom {
     // WebSocket in JavaScript, not sending it elsewhere.
     webSocket.accept();
     
-    this.connected.push(webSocket);
-    this.connected.forEach(c => console.log(c));
-    const docName = request.url.substring(new URL(request.url).origin.length + 1)//.replace('/', '//');
+    const docName = request.url.substring(new URL(request.url).origin.length + 1);
     console.log("GET" + docName);
     setupWSConnection(webSocket, request, docName);
   }
