@@ -4,13 +4,20 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "dev": "wrangler dev src/index.js",
-    "deploy": "wrangler deploy src/index.js",
+    "dev": "wrangler dev src/edge.mjs",
+    "deploy": "wrangler deploy src/edge.mjs",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "",
   "license": "Apache-2.0",
   "devDependencies": {
-    "wrangler": "^3.22.3"
+    "wrangler": "^3.22.4"
+  },
+  "dependencies": {
+    "lib0": "^0.2.52",
+    "lodash.debounce": "^4.0.8",
+    "y-protocols": "^1.0.5",
+    "ws": "^6.2.1",
+    "yjs": "^13.5.0"
   }
 }

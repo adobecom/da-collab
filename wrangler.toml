@@ -1,3 +1,14 @@
 name = "da-collab"
-main = "src/index.js"
+workers_dev = true
 compatibility_date = "2023-10-30"
+
+main = "src/edge.mjs"
+
+[durable_objects]
+bindings = [
+  { name = "rooms", class_name = "DocRoom" }
+]
+
+[[migrations]]
+tag = "v1" # Should be unique for each entry
+new_classes = ["DocRoom"]
