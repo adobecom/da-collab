@@ -134,14 +134,20 @@ const wsReadyStateClosed = 3 // eslint-disable-line
 const gcEnabled = false
 
 /**
- * @type {{bindState: function(string,WSSharedDoc):void, writeState:function(string,WSSharedDoc):Promise<any>, provider: any}|null}
+ * @type {{bindState: function(string,WSSharedDoc):Promise<void>, writeState:function(string,WSSharedDoc):Promise<any>, provider: any}|null}
  */
 let persistence = {
 
     bindState: async (docName, ydoc) => {
 
       const persistedYdoc = new Y.Doc();
-      const initalReq = await fetch(docName);
+      let initalReq;
+      try {
+        initalReq = await fetch(docName);
+      } catch (err) {
+        console.log(err);
+        throw err;
+      }
 
       const aemMap = persistedYdoc.getMap("aem");
       if (initalReq.ok) {
@@ -153,17 +159,25 @@ let persistence = {
       Y.applyUpdate(ydoc, Y.encodeStateAsUpdate(persistedYdoc))
       let last = aemMap.get("initial");
       ydoc.on("update", debounce(async () => {
-        const content = ydoc.getMap("aem").get("content");
-        if (last !== content) {
-          console.log("UPDATE(" + docName + "): " + content);
-          last = content;
-          const blob = new Blob([content], { type: 'text/html' });
+        try {
+          const content = ydoc.getMap("aem").get("content");
+          if (last !== content) {
+            last = content;
+            const blob = new Blob([content], { type: 'text/html' });
 
-          const formData = new FormData();
-          formData.append('data', blob);
+            const formData = new FormData();
+            formData.append('data', blob);
 
-          const opts = { method: 'PUT', body: formData };
-          fetch(docName, opts);
+            const opts = { method: 'PUT', body: formData };
+            const put = await fetch(docName, opts);
+            if (!put.ok) {
+              throw `${put.status} - ${put.statusText}`;
+            }
+            console.log(content);
+          }
+        } catch (err) {
+          console.error(err)
+          ydoc.emit('error', [err])
         }
       }, 2000, 10000));
     },
@@ -245,17 +259,18 @@ class WSSharedDoc extends Y.Doc {
  * @param {boolean} gc - whether to allow gc on the doc (applies only when created)
  * @return {WSSharedDoc}
  */
-const getYDoc = (docname, gc = true) => map.setIfUndefined(docs, docname, () => {
-  console.log("GET DOC ");
-  const doc = new WSSharedDoc(docname)
-  doc.gc = gc
-  if (persistence !== null) {
-    
-    persistence.bindState(docname, doc)
+const getYDoc = async (docname, gc = true) => {
+  let doc = docs.get(docname)
+  if (doc === undefined) {
+    doc = new WSSharedDoc(docname)
+    doc.gc = gc
+    if (persistence !== null) {
+      await persistence.bindState(docname, doc)
+    }
+    docs.set(docname, doc)
   }
-  docs.set(docname, doc)
   return doc
-})
+}
 
 /**
  * @param {any} conn
@@ -263,7 +278,6 @@ const getYDoc = (docname, gc = true) => map.setIfUndefined(docs, docname, () => 
  * @param {Uint8Array} message
  */
 const messageListener = (conn, doc, message) => {
-  console.log("MESSAGE" + conn);
   try {
     const encoder = encoding.createEncoder()
     const decoder = decoding.createDecoder(message)
@@ -329,12 +343,10 @@ const send = (doc, conn, m) => {
  * @param {any} req
  * @param {any} opts
  */
-const setupWSConnection = (conn, req, docName) => {
-  console.log("before get");
+const setupWSConnection = async (conn, req, docName) => {
   conn.binaryType = 'arraybuffer'
   // get doc, initialize if it does not exist yet
-  const doc = getYDoc(docName, true)
-  console.log("after get" + doc);
+  const doc = await getYDoc(docName, true)
   doc.conns.set(conn, new Set())
   // listen and reply to events
   conn.addEventListener('message', /** @param {ArrayBuffer} message */ message => messageListener(conn, doc, new Uint8Array(message.data)))
@@ -410,8 +422,8 @@ export class DocRoom {
     // WebSocket in JavaScript, not sending it elsewhere.
     webSocket.accept();
     
-    const docName = request.url.substring(new URL(request.url).origin.length + 1);
+    const docName = request.url.substring(new URL(request.url).origin.length + 1).replace('https:/admin.da.live', 'https://admin.da.live');
     console.log("GET" + docName);
-    setupWSConnection(webSocket, request, docName);
+    await setupWSConnection(webSocket, request, docName);
   }
 }
