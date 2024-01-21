@@ -96,7 +96,11 @@ export default {
   async fetch(request, env) {
     return await handleErrors(request, async () => {
       // We have received an HTTP request! 
-      return handleApiRequest(request.url, request, env);
+      let name = request.url;
+      if (request.url.indexOf('?') > 0) {
+        name = name.substring(0, request.url.indexOf('?'))
+      }
+      return handleApiRequest(name, request, env);
     });
   }
 }
@@ -138,12 +142,16 @@ const gcEnabled = false
  */
 let persistence = {
 
-    bindState: async (docName, ydoc) => {
+    bindState: async (docName, ydoc, conn) => {
 
       const persistedYdoc = new Y.Doc();
       let initalReq;
       try {
-        initalReq = await fetch(docName);
+        const opts = {};
+        if (conn.auth) {
+          opts.headers = new Headers({ 'Authorization' : conn.auth });
+        }
+        initalReq = await fetch(docName, opts);
       } catch (err) {
         console.log(err);
         throw err;
@@ -153,8 +161,10 @@ let persistence = {
       if (initalReq.ok) {
         const inital = await initalReq.text();
         aemMap.set("initial", inital);
-      } else {
+      } else if (initalReq.status === 404) {
         aemMap.set('initial', '');
+      } else {
+        throw `${initalReq.status} - ${initalReq.statusText}`;
       }
       Y.applyUpdate(ydoc, Y.encodeStateAsUpdate(persistedYdoc))
       let last = aemMap.get("initial");
@@ -169,6 +179,15 @@ let persistence = {
             formData.append('data', blob);
 
             const opts = { method: 'PUT', body: formData };
+            const auth = Array.from(ydoc.conns.keys())
+              .map((con) => con.auth);
+
+            if (auth.length > 0) {
+              opts.headers = new Headers({ 'Authorization' : [...new Set(auth)].join(',') });
+            }
+
+            console.log(opts);
+
             const put = await fetch(docName, opts);
             if (!put.ok) {
               throw `${put.status} - ${put.statusText}`;
@@ -259,13 +278,13 @@ class WSSharedDoc extends Y.Doc {
  * @param {boolean} gc - whether to allow gc on the doc (applies only when created)
  * @return {WSSharedDoc}
  */
-const getYDoc = async (docname, gc = true) => {
+const getYDoc = async (docname, conn, gc = true) => {
   let doc = docs.get(docname)
   if (doc === undefined) {
     doc = new WSSharedDoc(docname)
     doc.gc = gc
     if (persistence !== null) {
-      await persistence.bindState(docname, doc)
+      await persistence.bindState(docname, doc, conn)
     }
     docs.set(docname, doc)
   }
@@ -343,10 +362,10 @@ const send = (doc, conn, m) => {
  * @param {any} req
  * @param {any} opts
  */
-const setupWSConnection = async (conn, req, docName) => {
+const setupWSConnection = async (conn, docName) => {
   conn.binaryType = 'arraybuffer'
   // get doc, initialize if it does not exist yet
-  const doc = await getYDoc(docName, true)
+  const doc = await getYDoc(docName, conn, true)
   doc.conns.set(conn, new Set())
   // listen and reply to events
   conn.addEventListener('message', /** @param {ArrayBuffer} message */ message => messageListener(conn, doc, new Uint8Array(message.data)))
@@ -421,9 +440,13 @@ export class DocRoom {
     // Accept our end of the WebSocket. This tells the runtime that we'll be terminating the
     // WebSocket in JavaScript, not sending it elsewhere.
     webSocket.accept();
+    webSocket.auth = new URL(request.url).searchParams.get('Authorization')
     
-    const docName = request.url.substring(new URL(request.url).origin.length + 1).replace('https:/admin.da.live', 'https://admin.da.live');
-    console.log("GET" + docName);
-    await setupWSConnection(webSocket, request, docName);
+    let docName = request.url.substring(new URL(request.url).origin.length + 1).replace('https:/admin.da.live', 'https://admin.da.live').replace('http:/localhost', 'http://localhost');
+    if (docName.indexOf('?') > 0) {
+      docName = docName.substring(0, docName.indexOf('?'))
+    }
+    console.log(`GET ${docName} with auth(${webSocket.auth ? webSocket.auth.substring(0, webSocket.auth.indexOf(' ')) : 'none'})`);
+    await setupWSConnection(webSocket, docName);
   }
 }
