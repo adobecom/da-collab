@@ -143,29 +143,9 @@ const gcEnabled = false
 let persistence = {
 
     bindState: async (docName, ydoc, conn) => {
-
       const persistedYdoc = new Y.Doc();
-      let initalReq;
-      try {
-        const opts = {};
-        if (conn.auth) {
-          opts.headers = new Headers({ 'Authorization' : conn.auth });
-        }
-        initalReq = await fetch(docName, opts);
-      } catch (err) {
-        console.log(err);
-        throw err;
-      }
-
       const aemMap = persistedYdoc.getMap("aem");
-      if (initalReq.ok) {
-        const inital = await initalReq.text();
-        aemMap.set("initial", inital);
-      } else if (initalReq.status === 404) {
-        aemMap.set('initial', '');
-      } else {
-        throw `${initalReq.status} - ${initalReq.statusText}`;
-      }
+      aemMap.set("initial", conn.initial);
       Y.applyUpdate(ydoc, Y.encodeStateAsUpdate(persistedYdoc))
       let last = aemMap.get("initial");
       ydoc.on("update", debounce(async () => {
@@ -366,6 +346,7 @@ const setupWSConnection = async (conn, docName) => {
   conn.binaryType = 'arraybuffer'
   // get doc, initialize if it does not exist yet
   const doc = await getYDoc(docName, conn, true)
+  conn.initial = undefined;
   doc.conns.set(conn, new Set())
   // listen and reply to events
   conn.addEventListener('message', /** @param {ArrayBuffer} message */ message => messageListener(conn, doc, new Uint8Array(message.data)))
@@ -419,6 +400,45 @@ export class DocRoom {
         return new Response("expected websocket", {status: 400});
       }
 
+      const auth = new URL(request.url).searchParams.get('Authorization')
+
+      let docName = request.url.substring(new URL(request.url).origin.length + 1)
+        .replace('https:/admin.da.live', 'https://admin.da.live')
+        .replace('http:/localhost', 'http://localhost');
+
+      if (docName.indexOf('?') > 0) {
+        docName = docName.substring(0, docName.indexOf('?'))
+      }
+
+      // Make sure we only work with da.live or localhost
+      if (!docName.startsWith('https://admin.da.live/') &&
+          !docName.startsWith('https://stage-admin.da.live') &&
+          !docName.startsWith('http://localhost:')) {
+        return new Response('unable to get resource', {status: 404});
+      }
+
+      let initial = '';
+
+      // Check if we have the authorization for the room (this is a poor man's solution as right now
+      // only da-admin knows). As a side effect we can use the result as the initial value if the room
+      // doesn't exist yet.
+      try {
+        const opts = {};
+        if (auth) {
+          opts.headers = new Headers({ 'Authorization' : auth });
+        }
+        let initialReq = await fetch(docName, opts);
+        if (initialReq.ok) {
+          initial = await initialReq.text();
+        } else if (initialReq.status !== 404) {
+          console.log(`${initialReq.status} - ${initialReq.statusText}`);
+          return new Response("unable to get resource", {status: initialReq.status});
+        }
+      } catch (err) {
+        console.log(err);
+        return new Response('unable to get resource', {status: 500});
+      }
+
       // To accept the WebSocket request, we create a WebSocketPair (which is like a socketpair,
       // i.e. two WebSockets that talk to each other), we return one end of the pair in the
       // response, and we operate on the other end. Note that this API is not part of the
@@ -427,7 +447,7 @@ export class DocRoom {
       let pair = new WebSocketPair();
 
       // We're going to take pair[1] as our end, and return pair[0] to the client.
-      await this.handleSession(request, pair[1]);
+      await this.handleSession(pair[1], docName, auth, initial);
 
       // Now we return the other end of the pair to the client.
       return new Response(null, { status: 101, webSocket: pair[0] });
@@ -436,16 +456,13 @@ export class DocRoom {
   }
 
   // handleSession() implements our WebSocket-based chat protocol.
-  async handleSession(request, webSocket) {
+  async handleSession(webSocket, docName, auth, initial) {
     // Accept our end of the WebSocket. This tells the runtime that we'll be terminating the
     // WebSocket in JavaScript, not sending it elsewhere.
     webSocket.accept();
-    webSocket.auth = new URL(request.url).searchParams.get('Authorization')
+    webSocket.auth = auth;
+    webSocket.initial = initial;
     
-    let docName = request.url.substring(new URL(request.url).origin.length + 1).replace('https:/admin.da.live', 'https://admin.da.live').replace('http:/localhost', 'http://localhost');
-    if (docName.indexOf('?') > 0) {
-      docName = docName.substring(0, docName.indexOf('?'))
-    }
     console.log(`GET ${docName} with auth(${webSocket.auth ? webSocket.auth.substring(0, webSocket.auth.indexOf(' ')) : 'none'})`);
     await setupWSConnection(webSocket, docName);
   }
