@@ -412,7 +412,7 @@ export class DocRoom {
 
       // Make sure we only work with da.live or localhost
       if (!docName.startsWith('https://admin.da.live/') &&
-          !docName.startsWith('https://stage-admin.da.live') &&
+          !docName.startsWith('https://stage-admin.da.live/') &&
           !docName.startsWith('http://localhost:')) {
         return new Response('unable to get resource', {status: 404});
       }
