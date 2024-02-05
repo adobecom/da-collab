@@ -108,9 +108,6 @@ const persistence = {
             opts.headers = new Headers({ Authorization: [...new Set(auth)].join(',') });
           }
 
-          // eslint-disable-next-line no-console
-          console.log(opts);
-
           const put = await fetch(docName, opts);
           if (!put.ok) {
             throw new Error(`${put.status} - ${put.statusText}`);
