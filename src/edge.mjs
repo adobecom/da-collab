@@ -152,7 +152,7 @@ const send = (doc, conn, m) => {
   }
 };
 
-const updateHandler = (update, doc) => {
+const updateHandler = (update, _origin, doc) => {
   const encoder = encoding.createEncoder();
   encoding.writeVarUint(encoder, messageSync);
   syncProtocol.writeUpdate(encoder, update);
