@@ -1,5 +1,15 @@
-/* eslint-disable max-classes-per-file */
-
+/*
+ * Copyright 2024 Adobe. All rights reserved.
+ * This file is licensed to you under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License. You may obtain a copy
+ * of the License at http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software distributed under
+ * the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR REPRESENTATIONS
+ * OF ANY KIND, either express or implied. See the License for the specific language
+ * governing permissions and limitations under the License.
+ */
+// eslint-disable-next-line max-classes-per-file
 import * as Y from 'yjs';
 import * as syncProtocol from 'y-protocols/sync.js';
 import * as awarenessProtocol from 'y-protocols/awareness.js';
@@ -170,8 +180,12 @@ class WSSharedDoc extends Y.Doc {
       if (conn !== null) {
         const connControlledIDs = (this.conns.get(conn));
         if (connControlledIDs !== undefined) {
-          added.forEach((clientID) => { connControlledIDs.add(clientID); });
-          removed.forEach((clientID) => { connControlledIDs.delete(clientID); });
+          added.forEach((clientID) => {
+            connControlledIDs.add(clientID);
+          });
+          removed.forEach((clientID) => {
+            connControlledIDs.delete(clientID);
+          });
         }
       }
       // broadcast awareness update
@@ -235,9 +249,11 @@ const messageListener = (conn, doc, message) => {
 };
 
 const setupWSConnection = async (conn, docName) => {
+  // eslint-disable-next-line no-param-reassign
   conn.binaryType = 'arraybuffer';
   // get doc, initialize if it does not exist yet
   const doc = await getYDoc(docName, conn, true);
+  // eslint-disable-next-line no-param-reassign
   conn.initial = undefined;
   doc.conns.set(conn, new Set());
   // listen and reply to events
@@ -350,11 +366,14 @@ export class DocRoom {
   }
 
   // handleSession() implements our WebSocket-based protocol.
+  // eslint-disable-next-line class-methods-use-this
   async handleSession(webSocket, docName, auth, initial) {
     // Accept our end of the WebSocket. This tells the runtime that we'll be terminating the
     // WebSocket in JavaScript, not sending it elsewhere.
     webSocket.accept();
+    // eslint-disable-next-line no-param-reassign
     webSocket.auth = auth;
+    // eslint-disable-next-line no-param-reassign
     webSocket.initial = initial;
 
     // eslint-disable-next-line no-console
