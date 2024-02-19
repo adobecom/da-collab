@@ -50,6 +50,7 @@ const send = (doc, conn, m) => {
 
 export const persistence = {
   fetch: fetch.bind(this),
+  closeConn: closeConn.bind(this),
   get: async (docName, auth) => {
     const initalOpts = {};
     if (auth) {
@@ -127,7 +128,7 @@ export const persistence = {
     if (closeAll) {
       // We had an unauthorized from da-admin - lets reset the connections
       Array.from(ydoc.conns.keys())
-        .forEach((con) => closeConn(ydoc, con));
+        .forEach((con) => persistence.closeConn(ydoc, con));
     }
     return current;
   },
