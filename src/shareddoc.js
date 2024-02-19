@@ -101,7 +101,7 @@ export const persistence = {
     const cliContent = aemMap.get('content');
     if (svrContent !== cliContent) {
       // Only update the client if they're different
-      aemMap.set('svrupd', svrContent);
+      aemMap.set('svrinv', svrContent);
     }
   },
   update: async (ydoc, current) => {

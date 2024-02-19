@@ -102,11 +102,11 @@ describe('Worker test suite', () => {
     persistence.fetch = mockFetch;
 
     try {
-      assert(!aemMap.get('svrupd'), 'Precondition');
+      assert(!aemMap.get('svrinv'), 'Precondition');
       const resp = await dr.fetch(req)
 
       assert.equal(200, resp.status);
-      assert.equal('Document content', aemMap.get('svrupd'));
+      assert.equal('Document content', aemMap.get('svrinv'));
     } finally {
       persistence.fetch = oldPFectch;
     }
