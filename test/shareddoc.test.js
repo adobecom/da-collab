@@ -148,7 +148,55 @@ describe('Collab Test Suite', () => {
     assert(isSubArray(conn.message, fooAsUint8Arr));
   });
 
-  it('Test persistence put ok', async () =>{
+  it('Test persistence get ok', async () => {
+    persistence.fetch = async (url, opts) => {
+      assert.equal(url, 'foo');
+      assert.equal(opts.method, undefined);
+      assert(opts.headers === undefined);
+      return { ok: true, text: async () => 'content', status: 200, statusText: 'OK' };
+    };
+    const result = await persistence.get('foo', undefined);
+    assert.equal(result, 'content');
+  });
+
+  it('Test persistence get auth', async () => {
+    persistence.fetch = async (url, opts) => {
+      assert.equal(url, 'foo');
+      assert.equal(opts.method, undefined);
+      assert.equal(opts.headers.get('authorization'), 'auth');
+      return { ok: true, text: async () => 'content', status: 200, statusText: 'OK' };
+    };
+    const result = await persistence.get('foo', 'auth');
+    assert.equal(result, 'content');
+  });
+
+  it('Test persistence get 404', async () => {
+    persistence.fetch = async (url, opts) => {
+      assert.equal(url, 'foo');
+      assert.equal(opts.method, undefined);
+      assert.equal(opts.headers.get('authorization'), 'auth');
+      return { ok: false, text: async () => { throw new Error(); }, status: 404, statusText: 'Not Found' };
+    };
+    const result = await persistence.get('foo', 'auth');
+    assert.equal(result, '');
+  });
+
+  it('Test persistence get throws', async () => {
+    persistence.fetch = async (url, opts) => {
+      assert.equal(url, 'foo');
+      assert.equal(opts.method, undefined);
+      assert.equal(opts.headers.get('authorization'), 'auth');
+      return { ok: false, text: async () => { throw new Error(); }, status: 500, statusText: 'Error' };
+    };
+    try {
+      const result = await persistence.get('foo', 'auth');
+      assert.fail("Expected get to throw");
+    } catch (E) {
+      // expected
+    }
+  });
+
+  it('Test persistence put ok', async () => {
     persistence.fetch = async (url, opts) => {
       assert.equal(url, 'foo');
       assert.equal(opts.method, 'PUT');
@@ -162,7 +210,7 @@ describe('Collab Test Suite', () => {
     assert.equal(result.statusText, 'OK');
   });
 
-  it('Test persistence put auth', async () =>{
+  it('Test persistence put auth', async () => {
     persistence.fetch = async (url, opts) => {
       assert.equal(url, 'foo');
       assert.equal(opts.method, 'PUT');
@@ -174,5 +222,84 @@ describe('Collab Test Suite', () => {
     assert.equal(result.ok, false);
     assert.equal(result.status, 401);
     assert.equal(result.statusText, 'Unauth');
+  });
+
+  it('Test persistence update does not put if no change', async () => {
+    const docMap = new Map();
+    docMap.set('content', 'Svr content');
+
+    const mockYDoc = {
+      conns: { keys() { return [ {} ] }},
+      name: 'http://foo.bar/0/123.html',
+      getMap(nm) { return nm === 'aem' ? docMap : null }
+    };
+
+    persistence.put = async (ydoc, content) => {
+      assert.fail("update should not have happend");
+    }
+
+    const result = await persistence.update(mockYDoc, 'Svr content');
+    assert.equal(result, 'Svr content');
+  });
+
+  it('Test persistence update does put if change', async () => {
+    const docMap = new Map();
+    docMap.set('content', 'Svr content update');
+
+    const mockYDoc = {
+      conns: { keys() { return [ {} ] }},
+      name: 'http://foo.bar/0/123.html',
+      getMap(nm) { return nm === 'aem' ? docMap : null }
+    };
+
+    let called = false;
+    persistence.put = async (ydoc, content) => {
+      assert.equal(ydoc, mockYDoc);
+      assert.equal(content, 'Svr content update');
+      called = true;
+      return { ok: true, status: 201, statusText: 'Created'};
+    }
+
+    let calledCloseCon = false;
+    persistence.closeConn = (doc, conn) => {
+      calledCloseCon = true;
+    }
+
+    const result = await persistence.update(mockYDoc, 'Svr content');
+    assert.equal(result, 'Svr content update');
+    assert(called);
+    assert(!calledCloseCon);
+  });
+
+  it('Test persistence update closes all on auth failure', async () => {
+    const docMap = new Map();
+    docMap.set('content', 'Svr content update');
+
+    const mockYDoc = {
+      conns: new Map().set('foo', 'bar'),
+      name: 'http://foo.bar/0/123.html',
+      getMap(nm) { return nm === 'aem' ? docMap : null },
+      emit: () => {},
+    };
+
+    let called = false;
+    persistence.put = async (ydoc, content) => {
+      assert.equal(ydoc, mockYDoc);
+      assert.equal(content, 'Svr content update');
+      called = true;
+      return { ok: false, status: 401, statusText: 'Unauthorized'};
+    }
+
+    let calledCloseCon = false;
+    persistence.closeConn = (doc, conn) => {
+      assert.equal(doc, mockYDoc);
+      assert.equal(conn, 'foo');
+      calledCloseCon = true;
+    }
+
+    const result = await persistence.update(mockYDoc, 'Svr content');
+    assert.equal(result, 'Svr content');
+    assert(called);
+    assert(calledCloseCon);
   });
 });

@@ -28,7 +28,7 @@ const docs = new Map();
 const messageSync = 0;
 const messageAwareness = 1;
 
-const closeConn = (doc, conn) => {
+export const closeConn = (doc, conn) => {
   if (doc.conns.has(conn)) {
     const controlledIds = doc.conns.get(conn);
     doc.conns.delete(conn);
@@ -50,6 +50,7 @@ const send = (doc, conn, m) => {
 
 export const persistence = {
   fetch: fetch.bind(this),
+  closeConn: closeConn.bind(this),
   get: async (docName, auth) => {
     const initalOpts = {};
     if (auth) {
@@ -111,7 +112,7 @@ export const persistence = {
     if (closeAll) {
       // We had an unauthorized from da-admin - lets reset the connections
       Array.from(ydoc.conns.keys())
-        .forEach((con) => closeConn(ydoc, con));
+        .forEach((con) => persistence.closeConn(ydoc, con));
     }
     return current;
   },
