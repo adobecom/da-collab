@@ -28,11 +28,15 @@ const docs = new Map();
 const messageSync = 0;
 const messageAwareness = 1;
 
-const closeConn = (doc, conn) => {
+export const closeConn = (doc, conn) => {
   if (doc.conns.has(conn)) {
     const controlledIds = doc.conns.get(conn);
     doc.conns.delete(conn);
     awarenessProtocol.removeAwarenessStates(doc.awareness, Array.from(controlledIds), null);
+
+    if (doc.conns.size === 0) {
+      docs.delete(doc.name);
+    }
   }
   conn.close();
 };
@@ -80,7 +84,7 @@ export const persistence = {
     if (auth.length > 0) {
       opts.headers = new Headers({
         Authorization: [...new Set(auth)].join(','),
-        'X-Initiator': 'collab',
+        'X-DA-Initiator': 'collab',
       });
     }
 

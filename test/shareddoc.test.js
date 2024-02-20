@@ -10,7 +10,10 @@
  * governing permissions and limitations under the License.
  */
 import assert from 'assert';
-import { invalidateFromAdmin, updateHandler, WSSharedDoc, persistence, setYDoc} from '../src/shareddoc.js';
+
+import {
+  closeConn, invalidateFromAdmin, persistence, setYDoc, updateHandler, WSSharedDoc,
+} from '../src/shareddoc.js';
 
 function isSubArray(full, sub) {
   if (sub.length === 0) {
@@ -215,6 +218,7 @@ describe('Collab Test Suite', () => {
       assert.equal(url, 'foo');
       assert.equal(opts.method, 'PUT');
       assert.equal(opts.headers.get('authorization'), 'auth');
+      assert.equal(opts.headers.get('X-DA-Initiator'), 'collab');
       assert.equal(await opts.body.get('data').text(), 'test');
       return { ok: false, status: 401, statusText: 'Unauth'};
     };
@@ -390,5 +394,50 @@ describe('Collab Test Suite', () => {
     } finally {
       persistence.get = savedGet;
     }
+  });
+
+  it('Test close connection', async () => {
+    const awarenessEmitted = []
+    const mockDoc = {
+      awareness: {
+        emit(_, chg) { awarenessEmitted.push(chg); },
+        name: 'http://foo.bar/q/r.html',
+        states: new Map()
+      },
+      conns: new Map(),
+    };
+    mockDoc.awareness.states.set('123', null);
+    const docs = setYDoc(mockDoc.name, mockDoc);
+
+    const called = [];
+    const mockConn = {
+      close() { called.push('close'); }
+    };
+    mockDoc.conns.set(mockConn, ['123']); // TODO is this right?
+
+    assert.equal(0, called.length, 'Precondition');
+    closeConn(mockDoc, mockConn);
+    assert.deepStrictEqual(['close'], called);
+    assert.equal(0, mockDoc.conns.size);
+    assert.deepStrictEqual(['123'], awarenessEmitted[0][0].removed,
+      'removeAwarenessStates should be called');
+
+    assert.equal(docs.get(mockDoc.name), undefined,
+      'Document should be removed from global map');
+  });
+
+  it('Test close unknown connection', async () => {
+    const mockDoc = {
+      conns: new Map(),
+    };
+
+    const called = [];
+    const mockConn = {
+      close() { called.push('close'); }
+    };
+
+    assert.equal(0, called.length, 'Precondition');
+    closeConn(mockDoc, mockConn);
+    assert.deepStrictEqual(['close'], called);
   });
 });
