@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 import assert from 'assert';
-import { updateHandler, WSSharedDoc, persistence } from '../src/shareddoc.js';
+import { invalidateFromAdmin, updateHandler, WSSharedDoc, persistence, setYDoc} from '../src/shareddoc.js';
 
 function isSubArray(full, sub) {
   if (sub.length === 0) {
@@ -301,5 +301,94 @@ describe('Collab Test Suite', () => {
     assert.equal(result, 'Svr content');
     assert(called);
     assert(calledCloseCon);
+  });
+
+  it('Test invalidateFromAdmin', async () => {
+    const oldFun = persistence.invalidate;
+
+    const calledWith = [];
+    const mockInvalidate = async (ydoc) => {
+      calledWith.push(ydoc.name);
+    }
+
+    const mockYDoc = {};
+    mockYDoc.name = 'http://blah.di.blah/a/ha.html';
+    setYDoc(mockYDoc.name, mockYDoc);
+
+    try {
+      persistence.invalidate = mockInvalidate;
+
+      assert.equal(0, calledWith.length, 'Precondition');
+      assert(!await invalidateFromAdmin('http://foo.bar/123.html'));
+      assert.equal(0, calledWith.length);
+
+      assert(await invalidateFromAdmin('http://blah.di.blah/a/ha.html'));
+      assert.deepStrictEqual(['http://blah.di.blah/a/ha.html'], calledWith);
+    } finally {
+      persistence.invalidate = oldFun;
+    }
+  });
+
+  it('Test persistence invalidate', async () => {
+    const conn1 = { auth: 'auth1' };
+    const conn2 = { auth: 'auth2' };
+
+    const docMap = new Map();
+    docMap.set('content', 'Cli content');
+
+    const mockYDoc = {
+      conns: { keys() { return [ conn1, conn2 ] }},
+      name: 'http://foo.bar/0/123.html',
+      getMap(nm) { return nm === 'aem' ? docMap : null }
+    };
+
+    const getCalls = [];
+    const mockGet = (docName, auth) => {
+      getCalls.push(docName);
+      getCalls.push(auth);
+      return 'Svr content';
+    };
+
+    const savedGet = persistence.get;
+    try {
+      persistence.get = mockGet;
+      await persistence.invalidate(mockYDoc);
+
+      assert.equal('Svr content', docMap.get('svrinv'));
+      assert.equal(2, getCalls.length);
+      assert.equal('http://foo.bar/0/123.html', getCalls[0]);
+      assert.equal(['auth1,auth2'], getCalls[1]);
+    } finally {
+      persistence.get = savedGet;
+    }
+  });
+
+  it('Test persistence invalidate does nothing if client up to date', async () => {
+    const docMap = new Map();
+    docMap.set('content', 'Svr content');
+
+    const mockYDoc = {
+      conns: { keys() { return [ {} ] }},
+      name: 'http://foo.bar/0/123.html',
+      getMap(nm) { return nm === 'aem' ? docMap : null }
+    };
+
+    const getCalls = [];
+    const mockGet = (docName, auth) => {
+      getCalls.push(docName);
+      getCalls.push(auth);
+      return 'Svr content';
+    };
+
+    const savedGet = persistence.get;
+    try {
+      persistence.get = mockGet;
+      await persistence.invalidate(mockYDoc);
+
+      assert(docMap.get('svrinv') === undefined,
+        'Update should not be sent to client');
+    } finally {
+      persistence.get = savedGet;
+    }
   });
 });

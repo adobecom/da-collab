@@ -28,7 +28,7 @@ const docs = new Map();
 const messageSync = 0;
 const messageAwareness = 1;
 
-export const closeConn = (doc, conn) => {
+const closeConn = (doc, conn) => {
   if (doc.conns.has(conn)) {
     const controlledIds = doc.conns.get(conn);
     doc.conns.delete(conn);
@@ -78,7 +78,10 @@ export const persistence = {
       .map((con) => con.auth);
 
     if (auth.length > 0) {
-      opts.headers = new Headers({ Authorization: [...new Set(auth)].join(',') });
+      opts.headers = new Headers({
+        Authorization: [...new Set(auth)].join(','),
+        'X-Initiator': 'collab',
+      });
     }
 
     const { ok, status, statusText } = await persistence.fetch(ydoc.name, opts);
@@ -88,6 +91,19 @@ export const persistence = {
       status,
       statusText,
     };
+  },
+  invalidate: async (ydoc) => {
+    const auth = Array.from(ydoc.conns.keys())
+      .map((con) => con.auth);
+    const authHeader = auth.length > 0 ? [...new Set(auth)].join(',') : undefined;
+
+    const svrContent = await persistence.get(ydoc.name, authHeader);
+    const aemMap = ydoc.getMap('aem');
+    const cliContent = aemMap.get('content');
+    if (svrContent !== cliContent) {
+      // Only update the client if they're different
+      aemMap.set('svrinv', svrContent);
+    }
   },
   update: async (ydoc, current) => {
     let closeAll = false;
@@ -189,6 +205,9 @@ const getYDoc = async (docname, conn, gc = true) => {
   return doc;
 };
 
+// For testing
+export const setYDoc = (docname, ydoc) => docs.set(docname, ydoc);
+
 const messageListener = (conn, doc, message) => {
   try {
     const encoder = encoding.createEncoder();
@@ -219,6 +238,15 @@ const messageListener = (conn, doc, message) => {
     console.error(err);
     doc.emit('error', [err]);
   }
+};
+
+export const invalidateFromAdmin = async (docName) => {
+  const ydoc = docs.get(docName);
+  if (ydoc) {
+    await persistence.invalidate(ydoc);
+    return true;
+  }
+  return false;
 };
 
 export const setupWSConnection = async (conn, docName) => {
