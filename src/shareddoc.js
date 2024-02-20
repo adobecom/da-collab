@@ -196,7 +196,7 @@ export class WSSharedDoc extends Y.Doc {
   }
 }
 
-const getYDoc = async (docname, conn, gc = true) => {
+export const getYDoc = async (docname, conn, gc = true) => {
   let doc = docs.get(docname);
   if (doc === undefined) {
     doc = new WSSharedDoc(docname);
@@ -212,7 +212,7 @@ const getYDoc = async (docname, conn, gc = true) => {
 // For testing
 export const setYDoc = (docname, ydoc) => docs.set(docname, ydoc);
 
-const messageListener = (conn, doc, message) => {
+export const messageListener = (conn, doc, message) => {
   try {
     const encoder = encoding.createEncoder();
     const decoder = decoding.createDecoder(message);

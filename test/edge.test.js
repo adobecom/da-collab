@@ -11,7 +11,7 @@
  */
 import assert from 'assert';
 
-import { DocRoom, handleApiRequest } from '../src/edge.js';
+import defaultEdge, { DocRoom, handleApiRequest, handleErrors } from '../src/edge.js';
 import { persistence, setYDoc } from '../src/shareddoc.js';
 
 function hash(str) {
@@ -62,6 +62,35 @@ describe('Worker test suite', () => {
 
     assert.equal(roomFetchCalls.length, 0, 'Precondition');
     const resp = await handleApiRequest(req, env);
+    assert.equal(200, resp.status);
+    assert.deepStrictEqual(roomFetchCalls, ['http://foobar.com/a/b/c.html?api=syncAdmin'])
+  });
+
+  it('Test handle syncAdmin request via default export', async () => {
+    const expectedHash = hash('http://foobar.com/a/b/c.html');
+    const req = {
+      url: 'http://localhost:12345/api/v1/syncadmin?doc=http://foobar.com/a/b/c.html'
+    };
+
+    const roomFetchCalls = []
+    const room = {
+      fetch(url) {
+        roomFetchCalls.push(url.toString());
+        return new Response(null, { status: 200 });
+      }
+    };
+    const rooms = {
+      idFromName(nm) { return hash(nm) },
+      get(id) {
+        if (id === expectedHash) {
+          return room;
+        }
+      }
+    }
+    const env = { rooms };
+
+    assert.equal(roomFetchCalls.length, 0, 'Precondition');
+    const resp = await defaultEdge.fetch(req, env);
     assert.equal(200, resp.status);
     assert.deepStrictEqual(roomFetchCalls, ['http://foobar.com/a/b/c.html?api=syncAdmin'])
   });
@@ -132,5 +161,159 @@ describe('Worker test suite', () => {
     const resp = await dr.fetch(req)
 
     assert.equal(400, resp.status);
+  });
+
+  it('Test DocRoom fetch', async () => {
+    const savedNWSP = DocRoom.newWebSocketPair;
+    const savedBS = persistence.bindState;
+
+    try {
+      const bindCalled = [];
+      persistence.bindState = (nm, d, c) => bindCalled.push({nm, d, c});
+
+      const wspCalled = [];
+      const wsp0 = {};
+      const wsp1 = {
+        accept() { wspCalled.push('accept'); },
+        addEventListener(type) { wspCalled.push(`addEventListener ${type}`); },
+        close() { wspCalled.push('close'); }
+      }
+      DocRoom.newWebSocketPair = () => [wsp0, wsp1];
+
+      const dr = new DocRoom({ storage: null }, null);
+      const headers = new Map();
+      headers.set('Upgrade', 'websocket');
+      headers.set('Authorization', 'au123');
+      headers.set('X-collab-room', 'http://foo.bar/1/2/3.html');
+
+      const req = {
+        headers,
+        url: 'http://localhost:4711/'
+      };
+      const resp = await dr.fetch(req, {}, 306);
+      assert.equal(306 /* fabricated websocket response code */, resp.status);
+
+      assert.equal(1, bindCalled.length);
+      assert.equal('http://foo.bar/1/2/3.html', bindCalled[0].nm);
+
+      const acceptIdx = wspCalled.indexOf('accept');
+      const alMessIdx = wspCalled.indexOf('addEventListener message');
+      const alClsIdx = wspCalled.indexOf('addEventListener close');
+      const clsIdx = wspCalled.indexOf('close');
+
+      assert(acceptIdx >= 0);
+      assert(alMessIdx > acceptIdx);
+      assert(alClsIdx > alMessIdx);
+      assert(clsIdx > alClsIdx);
+    } finally {
+      DocRoom.newWebSocketPair = savedNWSP;
+      persistence.bindState = savedBS;
+    }
+  });
+
+  it('Test DocRoom fetch expects websocket', async () => {
+    const dr = new DocRoom({ storage: null }, null);
+
+    const req = {
+      headers: new Map(),
+      url: 'http://localhost:4711/'
+    };
+    const resp = await dr.fetch(req);
+    assert.equal(400, resp.status, 'Expected a Websocket');
+  });
+
+  it('Test DocRoom fetch expects document name', async () => {
+    const dr = new DocRoom({ storage: null }, null);
+    const headers = new Map();
+    headers.set('Upgrade', 'websocket');
+    headers.set('Authorization', 'au123');
+
+    const req = {
+      headers,
+      url: 'http://localhost:4711/'
+    };
+    const resp = await dr.fetch(req);
+    assert.equal(400, resp.status, 'Expected a document name');
+  });
+
+  it('Test handleErrors success', async () => {
+    const f = () => 42;
+
+    const res = await handleErrors(null, f);
+    assert.equal(42, res);
+  });
+
+  it('Test HandleError error', async () => {
+    const f = () => { throw new Error('testing'); }
+
+    const req = {
+      headers: new Map()
+    };
+    const res = await handleErrors(req, f);
+    assert.equal(500, res.status);
+  });
+
+  it('Test handleApiRequest', async () => {
+    const headers = new Map();
+    headers.set('myheader', 'myval');
+    const req = {
+      url: 'http://do.re.mi/https://admin.da.live/laaa.html?Authorization=qrtoefi',
+      headers
+    }
+
+    const roomFetchCalled = [];
+    const myRoom = {
+      fetch(req) {
+        roomFetchCalled.push(req);
+        return new Response(null, { status: 306 });
+      }
+    }
+
+    const rooms = {
+      idFromName(nm) { return `id${hash(nm)}`; },
+      get(id) { return id === 'id1255893316' ? myRoom : null; }
+    }
+    const env = { rooms };
+
+    const mockFetchCalled = [];
+    const mockFetch = async (url, opts) => {
+      mockFetchCalled.push({ url, opts });
+      return new Response(null, { status: 200 });
+    };
+    const res = await handleApiRequest(req, env, mockFetch);
+    assert.equal(306, res.status);
+
+    assert.equal(1, mockFetchCalled.length);
+    const mfreq = mockFetchCalled[0];
+    assert.equal('https://admin.da.live/laaa.html', mfreq.url);
+    assert.equal('HEAD', mfreq.opts.method);
+
+    assert.equal(1, roomFetchCalled.length);
+
+    const rfreq = roomFetchCalled[0];
+    assert.equal('https://admin.da.live/laaa.html', rfreq.url);
+    assert.equal('qrtoefi', rfreq.headers.get('Authorization'));
+    assert.equal('myval', rfreq.headers.get('myheader'));
+    assert.equal('https://admin.da.live/laaa.html', rfreq.headers.get('X-collab-room'));
+  });
+
+  it('Test handleApiRequest wrong host', async () => {
+    const req = {
+      url: 'http://do.re.mi/https://some.where.else/hihi.html',
+    }
+
+    const res = await handleApiRequest(req, {});
+    assert.equal(404, res.status);
+  });
+
+  it('Test handleApiRequest not authorized', async () => {
+    const req = {
+      url: 'http://do.re.mi/https://admin.da.live/hihi.html',
+    }
+
+    const mockFetch = async (url, opts) => new Response(null, {status: 401});
+
+    const res = await handleApiRequest(req, {}, mockFetch);
+    assert.equal(401, res.status);
   });
 });
