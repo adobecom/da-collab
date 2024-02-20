@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 import assert from 'assert';
-import { updateHandler, WSSharedDoc } from '../src/shareddoc.js';
+import { invalidateFromAdmin, updateHandler, WSSharedDoc, persistence, setYDoc} from '../src/shareddoc.js';
 
 function isSubArray(full, sub) {
   if (sub.length === 0) {
@@ -146,5 +146,249 @@ describe('Collab Test Suite', () => {
     assert(conn.isClosed === false);
     const fooAsUint8Arr = new Uint8Array(['f'.charCodeAt(0), 'o'.charCodeAt(0), 'o'.charCodeAt(0)]);
     assert(isSubArray(conn.message, fooAsUint8Arr));
+  });
+
+  it('Test persistence get ok', async () => {
+    persistence.fetch = async (url, opts) => {
+      assert.equal(url, 'foo');
+      assert.equal(opts.method, undefined);
+      assert(opts.headers === undefined);
+      return { ok: true, text: async () => 'content', status: 200, statusText: 'OK' };
+    };
+    const result = await persistence.get('foo', undefined);
+    assert.equal(result, 'content');
+  });
+
+  it('Test persistence get auth', async () => {
+    persistence.fetch = async (url, opts) => {
+      assert.equal(url, 'foo');
+      assert.equal(opts.method, undefined);
+      assert.equal(opts.headers.get('authorization'), 'auth');
+      return { ok: true, text: async () => 'content', status: 200, statusText: 'OK' };
+    };
+    const result = await persistence.get('foo', 'auth');
+    assert.equal(result, 'content');
+  });
+
+  it('Test persistence get 404', async () => {
+    persistence.fetch = async (url, opts) => {
+      assert.equal(url, 'foo');
+      assert.equal(opts.method, undefined);
+      assert.equal(opts.headers.get('authorization'), 'auth');
+      return { ok: false, text: async () => { throw new Error(); }, status: 404, statusText: 'Not Found' };
+    };
+    const result = await persistence.get('foo', 'auth');
+    assert.equal(result, '');
+  });
+
+  it('Test persistence get throws', async () => {
+    persistence.fetch = async (url, opts) => {
+      assert.equal(url, 'foo');
+      assert.equal(opts.method, undefined);
+      assert.equal(opts.headers.get('authorization'), 'auth');
+      return { ok: false, text: async () => { throw new Error(); }, status: 500, statusText: 'Error' };
+    };
+    try {
+      const result = await persistence.get('foo', 'auth');
+      assert.fail("Expected get to throw");
+    } catch (E) {
+      // expected
+    }
+  });
+
+  it('Test persistence put ok', async () => {
+    persistence.fetch = async (url, opts) => {
+      assert.equal(url, 'foo');
+      assert.equal(opts.method, 'PUT');
+      assert(opts.headers === undefined);
+      assert.equal(await opts.body.get('data').text(), 'test');
+      return { ok: true, status: 200, statusText: 'OK'};
+    };
+    const result = await persistence.put({ name: 'foo', conns: new Map()}, 'test');
+    assert.equal(result.ok, true);
+    assert.equal(result.status, 200);
+    assert.equal(result.statusText, 'OK');
+  });
+
+  it('Test persistence put auth', async () => {
+    persistence.fetch = async (url, opts) => {
+      assert.equal(url, 'foo');
+      assert.equal(opts.method, 'PUT');
+      assert.equal(opts.headers.get('authorization'), 'auth');
+      assert.equal(await opts.body.get('data').text(), 'test');
+      return { ok: false, status: 401, statusText: 'Unauth'};
+    };
+    const result = await persistence.put({ name: 'foo', conns: new Map().set({ auth: 'auth' }, new Set())}, 'test');
+    assert.equal(result.ok, false);
+    assert.equal(result.status, 401);
+    assert.equal(result.statusText, 'Unauth');
+  });
+
+  it('Test persistence update does not put if no change', async () => {
+    const docMap = new Map();
+    docMap.set('content', 'Svr content');
+
+    const mockYDoc = {
+      conns: { keys() { return [ {} ] }},
+      name: 'http://foo.bar/0/123.html',
+      getMap(nm) { return nm === 'aem' ? docMap : null }
+    };
+
+    persistence.put = async (ydoc, content) => {
+      assert.fail("update should not have happend");
+    }
+
+    const result = await persistence.update(mockYDoc, 'Svr content');
+    assert.equal(result, 'Svr content');
+  });
+
+  it('Test persistence update does put if change', async () => {
+    const docMap = new Map();
+    docMap.set('content', 'Svr content update');
+
+    const mockYDoc = {
+      conns: { keys() { return [ {} ] }},
+      name: 'http://foo.bar/0/123.html',
+      getMap(nm) { return nm === 'aem' ? docMap : null }
+    };
+
+    let called = false;
+    persistence.put = async (ydoc, content) => {
+      assert.equal(ydoc, mockYDoc);
+      assert.equal(content, 'Svr content update');
+      called = true;
+      return { ok: true, status: 201, statusText: 'Created'};
+    }
+
+    let calledCloseCon = false;
+    persistence.closeConn = (doc, conn) => {
+      calledCloseCon = true;
+    }
+
+    const result = await persistence.update(mockYDoc, 'Svr content');
+    assert.equal(result, 'Svr content update');
+    assert(called);
+    assert(!calledCloseCon);
+  });
+
+  it('Test persistence update closes all on auth failure', async () => {
+    const docMap = new Map();
+    docMap.set('content', 'Svr content update');
+
+    const mockYDoc = {
+      conns: new Map().set('foo', 'bar'),
+      name: 'http://foo.bar/0/123.html',
+      getMap(nm) { return nm === 'aem' ? docMap : null },
+      emit: () => {},
+    };
+
+    let called = false;
+    persistence.put = async (ydoc, content) => {
+      assert.equal(ydoc, mockYDoc);
+      assert.equal(content, 'Svr content update');
+      called = true;
+      return { ok: false, status: 401, statusText: 'Unauthorized'};
+    }
+
+    let calledCloseCon = false;
+    persistence.closeConn = (doc, conn) => {
+      assert.equal(doc, mockYDoc);
+      assert.equal(conn, 'foo');
+      calledCloseCon = true;
+    }
+
+    const result = await persistence.update(mockYDoc, 'Svr content');
+    assert.equal(result, 'Svr content');
+    assert(called);
+    assert(calledCloseCon);
+  });
+
+  it('Test invalidateFromAdmin', async () => {
+    const oldFun = persistence.invalidate;
+
+    const calledWith = [];
+    const mockInvalidate = async (ydoc) => {
+      calledWith.push(ydoc.name);
+    }
+
+    const mockYDoc = {};
+    mockYDoc.name = 'http://blah.di.blah/a/ha.html';
+    setYDoc(mockYDoc.name, mockYDoc);
+
+    try {
+      persistence.invalidate = mockInvalidate;
+
+      assert.equal(0, calledWith.length, 'Precondition');
+      assert(!await invalidateFromAdmin('http://foo.bar/123.html'));
+      assert.equal(0, calledWith.length);
+
+      assert(await invalidateFromAdmin('http://blah.di.blah/a/ha.html'));
+      assert.deepStrictEqual(['http://blah.di.blah/a/ha.html'], calledWith);
+    } finally {
+      persistence.invalidate = oldFun;
+    }
+  });
+
+  it('Test persistence invalidate', async () => {
+    const conn1 = { auth: 'auth1' };
+    const conn2 = { auth: 'auth2' };
+
+    const docMap = new Map();
+    docMap.set('content', 'Cli content');
+
+    const mockYDoc = {
+      conns: { keys() { return [ conn1, conn2 ] }},
+      name: 'http://foo.bar/0/123.html',
+      getMap(nm) { return nm === 'aem' ? docMap : null }
+    };
+
+    const getCalls = [];
+    const mockGet = (docName, auth) => {
+      getCalls.push(docName);
+      getCalls.push(auth);
+      return 'Svr content';
+    };
+
+    const savedGet = persistence.get;
+    try {
+      persistence.get = mockGet;
+      await persistence.invalidate(mockYDoc);
+
+      assert.equal('Svr content', docMap.get('svrinv'));
+      assert.equal(2, getCalls.length);
+      assert.equal('http://foo.bar/0/123.html', getCalls[0]);
+      assert.equal(['auth1,auth2'], getCalls[1]);
+    } finally {
+      persistence.get = savedGet;
+    }
+  });
+
+  it('Test persistence invalidate does nothing if client up to date', async () => {
+    const docMap = new Map();
+    docMap.set('content', 'Svr content');
+
+    const mockYDoc = {
+      conns: { keys() { return [ {} ] }},
+      name: 'http://foo.bar/0/123.html',
+      getMap(nm) { return nm === 'aem' ? docMap : null }
+    };
+
+    const getCalls = [];
+    const mockGet = (docName, auth) => {
+      getCalls.push(docName);
+      getCalls.push(auth);
+      return 'Svr content';
+    };
+
+    const savedGet = persistence.get;
+    try {
+      persistence.get = mockGet;
+      await persistence.invalidate(mockYDoc);
+
+      assert(docMap.get('svrinv') === undefined,
+        'Update should not be sent to client');
+    } finally {
+      persistence.get = savedGet;
+    }
   });
 });

@@ -9,7 +9,7 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-import { setupWSConnection } from './shareddoc.js';
+import { invalidateFromAdmin, setupWSConnection } from './shareddoc.js';
 
 // This is the Edge Worker, built using Durable Objects!
 
@@ -42,9 +42,37 @@ async function handleErrors(request, func) {
   }
 }
 
-async function handleApiRequest(request, env) {
+async function syncAdmin(url, request, env) {
+  const doc = url.searchParams.get('doc');
+  if (!doc) {
+    return new Response('Bad', { status: 400 });
+  }
+
+  // eslint-disable-next-line no-console
+  console.log('Room name:', doc);
+  const id = env.rooms.idFromName(doc);
+  const roomObject = env.rooms.get(id);
+
+  return roomObject.fetch(new URL(`${doc}?api=syncAdmin`));
+}
+
+async function handleApiCall(url, request, env) {
+  switch (url.pathname) {
+    case '/api/v1/syncadmin':
+      return syncAdmin(url, request, env);
+    default:
+      return new Response('Bad Request', { status: 400 });
+  }
+}
+
+export async function handleApiRequest(request, env) {
   // We've received at API request.
-  const auth = new URL(request.url).searchParams.get('Authorization');
+  const url = new URL(request.url);
+  if (url.pathname.startsWith('/api/')) {
+    return handleApiCall(url, request, env);
+  }
+
+  const auth = url.searchParams.get('Authorization');
 
   // We need to massage the path somewhat because on connections from localhost safari sends
   // a path with only one slash for some reason.
@@ -130,11 +158,33 @@ export class DocRoom {
     this.env = env;
   }
 
+  static async handleApiCall(url, request) {
+    const qidx = request.url.indexOf('?');
+    const baseURL = request.url.substring(0, qidx);
+
+    const api = url.searchParams.get('api');
+    switch (api) {
+      case 'syncAdmin':
+        if (await invalidateFromAdmin(baseURL)) {
+          return new Response('OK', { status: 200 });
+        } else {
+          return new Response('Not Found', { status: 404 });
+        }
+      default:
+        return new Response('Invalid API', { status: 400 });
+    }
+  }
+
   // The system will call fetch() whenever an HTTP request is sent to this Object. Such requests
   // can only be sent from other Worker code, such as the code above; these requests don't come
   // directly from the internet. In the future, we will support other formats than HTTP for these
   // communications, but we started with HTTP for its familiarity.
   async fetch(request) {
+    const url = new URL(request.url);
+    if (url.search.startsWith('?api=')) {
+      return DocRoom.handleApiCall(url, request);
+    }
+
     if (request.headers.get('Upgrade') !== 'websocket') {
       return new Response('expected websocket', { status: 400 });
     }

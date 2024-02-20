@@ -23,61 +23,6 @@ const wsReadyStateOpen = 1;
 // disable gc when using snapshots!
 const gcEnabled = false;
 
-const persistence = {
-  bindState: async (docName, ydoc, conn) => {
-    const persistedYdoc = new Y.Doc();
-    const aemMap = persistedYdoc.getMap('aem');
-    const initalOpts = {};
-    if (conn.auth) {
-      initalOpts.headers = new Headers({ Authorization: conn.auth });
-    }
-    const initialReq = await fetch(docName, initalOpts);
-    if (initialReq.ok) {
-      aemMap.set('initial', await initialReq.text());
-    } else if (initialReq.status === 404) {
-      aemMap.set('initial', '');
-    } else {
-      // eslint-disable-next-line no-console
-      console.log(`unable to get resource: ${initialReq.status} - ${initialReq.statusText}`);
-      throw new Error(`unable to get resource - status: ${initialReq.status}`);
-    }
-
-    Y.applyUpdate(ydoc, Y.encodeStateAsUpdate(persistedYdoc));
-    let last = aemMap.get('initial');
-    ydoc.on('update', debounce(async () => {
-      try {
-        const content = ydoc.getMap('aem').get('content');
-        if (last !== content) {
-          last = content;
-          const blob = new Blob([content], { type: 'text/html' });
-
-          const formData = new FormData();
-          formData.append('data', blob);
-
-          const opts = { method: 'PUT', body: formData };
-          const auth = Array.from(ydoc.conns.keys())
-            .map((con) => con.auth);
-
-          if (auth.length > 0) {
-            opts.headers = new Headers({ Authorization: [...new Set(auth)].join(',') });
-          }
-
-          const put = await fetch(docName, opts);
-          if (!put.ok) {
-            throw new Error(`${put.status} - ${put.statusText}`);
-          }
-          // eslint-disable-next-line no-console
-          console.log(content);
-        }
-      } catch (err) {
-        // eslint-disable-next-line no-console
-        console.error(err);
-        ydoc.emit('error', [err]);
-      }
-    }, 2000, 10000));
-  },
-};
-
 const docs = new Map();
 
 const messageSync = 0;
@@ -101,6 +46,106 @@ const send = (doc, conn, m) => {
   } catch (e) {
     closeConn(doc, conn);
   }
+};
+
+export const persistence = {
+  fetch: fetch.bind(this),
+  closeConn: closeConn.bind(this),
+  get: async (docName, auth) => {
+    const initalOpts = {};
+    if (auth) {
+      initalOpts.headers = new Headers({ Authorization: auth });
+    }
+    const initialReq = await persistence.fetch(docName, initalOpts);
+    if (initialReq.ok) {
+      return initialReq.text();
+    } else if (initialReq.status === 404) {
+      return '';
+    } else {
+      // eslint-disable-next-line no-console
+      console.log(`unable to get resource: ${initialReq.status} - ${initialReq.statusText}`);
+      throw new Error(`unable to get resource - status: ${initialReq.status}`);
+    }
+  },
+  put: async (ydoc, content) => {
+    const blob = new Blob([content], { type: 'text/html' });
+
+    const formData = new FormData();
+    formData.append('data', blob);
+
+    const opts = { method: 'PUT', body: formData };
+    const auth = Array.from(ydoc.conns.keys())
+      .map((con) => con.auth);
+
+    if (auth.length > 0) {
+      opts.headers = new Headers({
+        Authorization: [...new Set(auth)].join(','),
+        'X-Initiator': 'collab',
+      });
+    }
+
+    const { ok, status, statusText } = await persistence.fetch(ydoc.name, opts);
+
+    return {
+      ok,
+      status,
+      statusText,
+    };
+  },
+  invalidate: async (ydoc) => {
+    const auth = Array.from(ydoc.conns.keys())
+      .map((con) => con.auth);
+    const authHeader = auth.length > 0 ? [...new Set(auth)].join(',') : undefined;
+
+    const svrContent = await persistence.get(ydoc.name, authHeader);
+    const aemMap = ydoc.getMap('aem');
+    const cliContent = aemMap.get('content');
+    if (svrContent !== cliContent) {
+      // Only update the client if they're different
+      aemMap.set('svrinv', svrContent);
+    }
+  },
+  update: async (ydoc, current) => {
+    let closeAll = false;
+    try {
+      const content = ydoc.getMap('aem').get('content');
+      if (current !== content) {
+        const { ok, status, statusText } = await persistence.put(ydoc, content);
+
+        if (!ok) {
+          closeAll = status === 401;
+          throw new Error(`${status} - ${statusText}`);
+        }
+        // eslint-disable-next-line no-console
+        console.log(content);
+        return content;
+      }
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error(err);
+      ydoc.emit('error', [err]);
+    }
+    if (closeAll) {
+      // We had an unauthorized from da-admin - lets reset the connections
+      Array.from(ydoc.conns.keys())
+        .forEach((con) => persistence.closeConn(ydoc, con));
+    }
+    return current;
+  },
+  bindState: async (docName, ydoc, conn) => {
+    const persistedYdoc = new Y.Doc();
+    const aemMap = persistedYdoc.getMap('aem');
+
+    let current = await persistence.get(docName, conn.auth);
+
+    aemMap.set('initial', current);
+
+    Y.applyUpdate(ydoc, Y.encodeStateAsUpdate(persistedYdoc));
+
+    ydoc.on('update', debounce(async () => {
+      current = await persistence.update(ydoc, current);
+    }, 2000, 10000));
+  },
 };
 
 export const updateHandler = (update, _origin, doc) => {
@@ -160,6 +205,9 @@ const getYDoc = async (docname, conn, gc = true) => {
   return doc;
 };
 
+// For testing
+export const setYDoc = (docname, ydoc) => docs.set(docname, ydoc);
+
 const messageListener = (conn, doc, message) => {
   try {
     const encoder = encoding.createEncoder();
@@ -190,6 +238,15 @@ const messageListener = (conn, doc, message) => {
     console.error(err);
     doc.emit('error', [err]);
   }
+};
+
+export const invalidateFromAdmin = async (docName) => {
+  const ydoc = docs.get(docName);
+  if (ydoc) {
+    await persistence.invalidate(ydoc);
+    return true;
+  }
+  return false;
 };
 
 export const setupWSConnection = async (conn, docName) => {
