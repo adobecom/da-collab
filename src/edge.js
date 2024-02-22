@@ -23,7 +23,7 @@ import { invalidateFromAdmin, setupWSConnection } from './shareddoc.js';
 // `handleErrors()` is a little utility function that can wrap an HTTP request handler in a
 // try/catch and return errors to the client. You probably wouldn't want to use this in production
 // code but it is convenient when debugging and iterating.
-async function handleErrors(request, func) {
+export async function handleErrors(request, func) {
   try {
     return await func();
   } catch (err) {
@@ -65,7 +65,7 @@ async function handleApiCall(url, request, env) {
   }
 }
 
-export async function handleApiRequest(request, env) {
+export async function handleApiRequest(request, env, ffetch = fetch) {
   // We've received at API request.
   const url = new URL(request.url);
   if (url.pathname.startsWith('/api/')) {
@@ -98,7 +98,7 @@ export async function handleApiRequest(request, env) {
     if (auth) {
       opts.headers = new Headers({ Authorization: auth });
     }
-    const initialReq = await fetch(docName, opts);
+    const initialReq = await ffetch(docName, opts);
     if (!initialReq.ok && initialReq.status !== 404) {
       // eslint-disable-next-line no-console
       console.log(`${initialReq.status} - ${initialReq.statusText}`);
@@ -175,11 +175,20 @@ export class DocRoom {
     }
   }
 
+  // Isolated for testing
+  static newWebSocketPair() {
+    // eslint-disable-next-line no-undef
+    return new WebSocketPair();
+  }
+
   // The system will call fetch() whenever an HTTP request is sent to this Object. Such requests
   // can only be sent from other Worker code, such as the code above; these requests don't come
   // directly from the internet. In the future, we will support other formats than HTTP for these
   // communications, but we started with HTTP for its familiarity.
-  async fetch(request) {
+  //
+  // Note that strangely enough in a unit testing env returning a Response with status 101 isn't
+  // allowed by the runtime, so we can set an alternative 'success' code here for testing.
+  async fetch(request, _opts, successCode = 101) {
     const url = new URL(request.url);
     if (url.search.startsWith('?api=')) {
       return DocRoom.handleApiCall(url, request);
@@ -200,14 +209,13 @@ export class DocRoom {
     // response, and we operate on the other end. Note that this API is not part of the
     // Fetch API standard; unfortunately, the Fetch API / Service Workers specs do not define
     // any way to act as a WebSocket server today.
-    // eslint-disable-next-line no-undef
-    const pair = new WebSocketPair();
+    const pair = DocRoom.newWebSocketPair();
 
     // We're going to take pair[1] as our end, and return pair[0] to the client.
     await this.handleSession(pair[1], docName, auth);
 
     // Now we return the other end of the pair to the client.
-    return new Response(null, { status: 101, webSocket: pair[0] });
+    return new Response(null, { status: successCode, webSocket: pair[0] });
   }
 
   // handleSession() implements our WebSocket-based protocol.

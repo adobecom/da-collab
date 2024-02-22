@@ -5,8 +5,8 @@
     "text-summary"
   ],
   "check-coverage": true,
-  "lines": 10,
-  "branches": 10,
-  "statements": 10,
+  "lines": 85,
+  "branches": 85,
+  "statements": 85,
   "skip-full": true
 }
