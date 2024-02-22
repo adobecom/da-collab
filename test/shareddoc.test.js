@@ -590,11 +590,23 @@ describe('Collab Test Suite', () => {
         send(m, e) { sendCalls.push({m, e}); }
       };
 
+      const awarenessStates = new Map();
+      awarenessStates.set('foo', 'blahblahblah');
+      const awareness = {
+        getStates: () => awarenessStates,
+        meta: awarenessStates,
+        states: awarenessStates
+      };
+
+      const ydoc = await getYDoc(docName, mockConn, true);
+      ydoc.awareness = awareness;
+
       await setupWSConnection(mockConn, docName);
 
       assert.equal(0, closeCalls.length);
-      assert.equal(1, sendCalls.length);
+      assert.equal(2, sendCalls.length);
       assert.deepStrictEqual([0, 0, 1, 0], Array.from(sendCalls[0].m));
+      assert(isSubArray(sendCalls[1].m, getAsciiChars('blahblahblah')));
     } finally {
       persistence.bindState = savedBind;
     }
