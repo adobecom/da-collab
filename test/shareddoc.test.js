@@ -42,6 +42,16 @@ function isSubArray(full, sub) {
   return false;
 }
 
+function getAsciiChars(str) {
+  const codes = [];
+
+  const strArr = Array.from(str);
+  for (const c of strArr) {
+    codes.push(c.charCodeAt(0));
+  }
+  return codes;
+}
+
 describe('Collab Test Suite', () => {
   it('Test updateHandler', () => {
     const conn = {
@@ -494,7 +504,7 @@ describe('Collab Test Suite', () => {
     doc.conns.set(conn, 'conn1');
     doc.awareness.setLocalState('foo');
     assert(conn.isClosed === false);
-    const fooAsUint8Arr = new Uint8Array(['f'.charCodeAt(0), 'o'.charCodeAt(0), 'o'.charCodeAt(0)]);
+    const fooAsUint8Arr = new Uint8Array(getAsciiChars('foo'));
     assert(isSubArray(conn.message, fooAsUint8Arr));
   });
 
@@ -519,7 +529,7 @@ describe('Collab Test Suite', () => {
 
     ah[0]({added: [], updated: [doc.clientID], removed: []}, mockConn);
 
-    const barrAsUint8Arr = new Uint8Array(['b'.charCodeAt(0), 'a'.charCodeAt(0), 'r'.charCodeAt(0), 'r'.charCodeAt(0), 'r'.charCodeAt(0)]);
+    const barrAsUint8Arr = new Uint8Array(getAsciiChars('barrr'));
     assert(isSubArray(sentMessages[0].m, barrAsUint8Arr));
   });
 
@@ -591,35 +601,71 @@ describe('Collab Test Suite', () => {
   });
 
   it('Test message listener Sync', () => {
-    const emitted = []
+    const connSent = []
+    const conn = {
+      readyState: 0, // wsReadyState
+      send(m, r) { connSent.push({m, r}); }
+    };
 
-    const conn = {};
+    const emitted = []
     const doc = new Y.Doc();
     doc.emit = (t, e) => emitted.push({t, e});
+    doc.getMap('foo').set('bar', 'hello');
 
-    const message = [0 /* messageSync */, 1, 2, 3, 4, 5];
+    const message = [0, 0, 1, 0];
 
     messageListener(conn, doc, new Uint8Array(message));
+    assert.equal(1, connSent.length);
+    assert(isSubArray(connSent[0].m, new Uint8Array(getAsciiChars('hello'))));
+
     for (let i = 0; i < emitted.length; i++) {
       assert(emitted[i].t !== 'error');
     }
-
-    // TODO more assertions
   });
 
-  // it('Test message listener awareness', () => {
-  //   const emitted = []
+  it('Test message listener awareness', () => {
+    // A fabricated message
+    const message = [
+      1, 247, 1, 1, 187, 143, 251, 213, 14, 21, 238, 1, 123, 34, 99, 117, 114, 115, 111,
+      114, 34, 58, 123, 34, 97, 110, 99, 104, 111, 114, 34, 58, 123, 34, 116, 121, 112,
+      101, 34, 58, 123, 34, 99, 108, 105, 101, 110, 116, 34, 58, 51, 49, 51, 52, 57, 50,
+      57, 54, 56, 55, 44, 34, 99, 108, 111, 99, 107, 34, 58, 49, 57, 125, 44, 34, 116,
+      110, 97, 109, 101, 34, 58, 110, 117, 108, 108, 44, 34, 105, 116, 101, 109, 34, 58,
+      123, 34, 99, 108, 105, 101, 110, 116, 34, 58, 51, 49, 51, 52, 57, 50, 57, 54, 56,
+      55, 44, 34, 99, 108, 111, 99, 107, 34, 58, 50, 48, 125, 44, 34, 97, 115, 115, 111,
+      99, 34, 58, 48, 125, 44, 34, 104, 101, 97, 100, 34, 58, 123, 34, 116, 121, 112,
+      101, 34, 58, 123, 34, 99, 108, 105, 101, 110, 116, 34, 58, 51, 49, 51, 52, 57, 50,
+      57, 54, 56, 55, 44, 34, 99, 108, 111, 99, 107, 34, 58, 49, 57, 125, 44, 34, 116,
+      110, 97, 109, 101, 34, 58, 110, 117, 108, 108, 44, 34, 105, 116, 101, 109, 34, 58,
+      123, 34, 99, 108, 105, 101, 110, 116, 34, 58, 51, 49, 51, 52, 57, 50, 57, 54, 56,
+      55, 44, 34, 99, 108, 111, 99, 107, 34, 58, 50, 48, 125, 44, 34, 97, 115, 115, 111,
+      99, 34, 58, 48, 125, 125, 125 ];
 
-  //   const conn = {};
-  //   const doc = new Y.Doc();
-  //   doc.emit = (t, e) => emitted.push({t, e});
+      const awarenessEmitted = [];
+      const awareness = {
+        emit(t, d) { awarenessEmitted.push({t, d}); },
+        meta: new Map(),
+        states: new Map()
+      };
 
-  //   const message = [1 /* messageAwareness */, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
-  //   messageListener(conn, doc, new Uint8Array(message));
-  //   for (let i = 0; i < emitted.length; i++) {
-  //     assert(emitted[i].t !== 'error');
-  //   }
+      const docEmitted = [];
+      const doc = new Y.Doc();
+      doc.awareness = awareness;
+      doc.emit = (t, e) => docEmitted.push({t, e});
 
-  //   // TODO more assertions
-  // });
+      const conn = {};
+      messageListener(conn, doc, new Uint8Array(message));
+
+      assert(awarenessEmitted.length > 0);
+      for (let i = 0; i < awarenessEmitted.length; i++) {
+        assert(awarenessEmitted[i].t === 'change' ||
+          awarenessEmitted[i].t === 'update');
+        assert.deepStrictEqual([3938371515], awarenessEmitted[i].d[0].added)
+        assert.equal(awarenessEmitted[i].d[1], conn);
+      }
+
+      for (let i = 0; i < docEmitted.length; i++) {
+        assert(docEmitted[i].t !== 'error');
+      }
+    });
 });
