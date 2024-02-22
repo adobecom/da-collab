@@ -9,8 +9,13 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
+import * as Y from 'yjs';
 import assert from 'assert';
-import { invalidateFromAdmin, updateHandler, WSSharedDoc, persistence, setYDoc} from '../src/shareddoc.js';
+
+import {
+  closeConn, getYDoc, invalidateFromAdmin, messageListener, persistence, setupWSConnection, setYDoc, updateHandler, WSSharedDoc,
+} from '../src/shareddoc.js';
+import { uint8Array } from 'lib0/prng.js';
 
 function isSubArray(full, sub) {
   if (sub.length === 0) {
@@ -35,6 +40,16 @@ function isSubArray(full, sub) {
   }
 
   return false;
+}
+
+function getAsciiChars(str) {
+  const codes = [];
+
+  const strArr = Array.from(str);
+  for (const c of strArr) {
+    codes.push(c.charCodeAt(0));
+  }
+  return codes;
 }
 
 describe('Collab Test Suite', () => {
@@ -121,33 +136,6 @@ describe('Collab Test Suite', () => {
     assert.deepStrictEqual(update, conn2.message.slice(-4));
   });
 
-  it('Test WSSharedDoc', () => {
-    const doc = new WSSharedDoc('hello');
-    assert.equal(doc.name, 'hello');
-    assert.equal(doc.awareness.getLocalState(), null);
-
-    const conn = {
-      isClosed: false,
-      message: null,
-      readyState: 1, // wsReadyStateOpen
-      has() {
-        return true;
-      },
-      close() {
-        this.isClosed = true;
-      },
-      send(m) {
-        this.message = m;
-      },
-    };
-
-    doc.conns.set(conn, 'conn1');
-    doc.awareness.setLocalState('foo');
-    assert(conn.isClosed === false);
-    const fooAsUint8Arr = new Uint8Array(['f'.charCodeAt(0), 'o'.charCodeAt(0), 'o'.charCodeAt(0)]);
-    assert(isSubArray(conn.message, fooAsUint8Arr));
-  });
-
   it('Test persistence get ok', async () => {
     persistence.fetch = async (url, opts) => {
       assert.equal(url, 'foo');
@@ -215,6 +203,7 @@ describe('Collab Test Suite', () => {
       assert.equal(url, 'foo');
       assert.equal(opts.method, 'PUT');
       assert.equal(opts.headers.get('authorization'), 'auth');
+      assert.equal(opts.headers.get('X-DA-Initiator'), 'collab');
       assert.equal(await opts.body.get('data').text(), 'test');
       return { ok: false, status: 401, statusText: 'Unauth'};
     };
@@ -391,4 +380,292 @@ describe('Collab Test Suite', () => {
       persistence.get = savedGet;
     }
   });
+
+  it('Test close connection', async () => {
+    const awarenessEmitted = []
+    const mockDoc = {
+      awareness: {
+        emit(_, chg) { awarenessEmitted.push(chg); },
+        name: 'http://foo.bar/q/r.html',
+        states: new Map()
+      },
+      conns: new Map(),
+    };
+    mockDoc.awareness.states.set('123', null);
+    const docs = setYDoc(mockDoc.name, mockDoc);
+
+    const called = [];
+    const mockConn = {
+      close() { called.push('close'); }
+    };
+    const ids = new Set();
+    ids.add('123');
+    mockDoc.conns.set(mockConn, ids);
+
+    assert.equal(0, called.length, 'Precondition');
+    closeConn(mockDoc, mockConn);
+    assert.deepStrictEqual(['close'], called);
+    assert.equal(0, mockDoc.conns.size);
+    assert.deepStrictEqual(['123'], awarenessEmitted[0][0].removed,
+      'removeAwarenessStates should be called');
+
+    assert.equal(docs.get(mockDoc.name), undefined,
+      'Document should be removed from global map');
+  });
+
+  it('Test close unknown connection', async () => {
+    const mockDoc = {
+      conns: new Map(),
+    };
+
+    const called = [];
+    const mockConn = {
+      close() { called.push('close'); }
+    };
+
+    assert.equal(0, called.length, 'Precondition');
+    closeConn(mockDoc, mockConn);
+    assert.deepStrictEqual(['close'], called);
+  });
+
+  it('Test bindState', async () => {
+    const savedGet = persistence.get;
+    const savedUpd = persistence.update;
+
+    const docName = 'http://lalala.com/ha/ha/ha.html';
+    const testYDoc = new Y.Doc();
+    const mockConn = {
+      auth: 'myauth'
+    };
+
+    try {
+      persistence.get = async (nm, au) => `Get: ${nm}-${au}`;
+      const updated = new Map();
+      persistence.update = async (d, v) => updated.set(d, v);
+
+      assert.equal(0, updated.size, 'Precondition');
+      await persistence.bindState(docName, testYDoc, mockConn, 0, 0);
+
+      assert.equal(testYDoc.getMap('aem').get('initial'),
+        'Get: http://lalala.com/ha/ha/ha.html-myauth');
+    } finally {
+      persistence.get = savedGet;
+      persistence.update = savedUpd;
+    }
+  })
+
+  it('Test getYDoc', async () => {
+    const savedBS = persistence.bindState;
+
+    try {
+      const bsCalls = [];
+      persistence.bindState = (dn, d, c) => {
+        bsCalls.push({dn, d, c});
+      };
+
+      const docName = 'http://www.acme.org/somedoc.html';
+      const mockConn = {};
+
+      assert.equal(0, bsCalls.length, 'Precondition');
+      const doc = await getYDoc(docName, mockConn);
+      assert.equal(1, bsCalls.length);
+      assert.equal(bsCalls[0].dn, docName);
+      assert.equal(bsCalls[0].d, doc);
+      assert.equal(bsCalls[0].c, mockConn);
+
+      const doc2 = await getYDoc(docName, mockConn);
+      assert.equal(1, bsCalls.length, 'Should not have called bindstate again');
+      assert.equal(doc, doc2);
+    } finally {
+      persistence.bindState = savedBS;
+    }
+  });
+
+  it('Test WSSharedDoc', () => {
+    const doc = new WSSharedDoc('hello');
+    assert.equal(doc.name, 'hello');
+    assert.equal(doc.awareness.getLocalState(), null);
+
+    const conn = {
+      isClosed: false,
+      message: null,
+      readyState: 1, // wsReadyStateOpen
+      has() {
+        return true;
+      },
+      close() {
+        this.isClosed = true;
+      },
+      send(m) {
+        this.message = m;
+      },
+    };
+
+    doc.conns.set(conn, 'conn1');
+    doc.awareness.setLocalState('foo');
+    assert(conn.isClosed === false);
+    const fooAsUint8Arr = new Uint8Array(getAsciiChars('foo'));
+    assert(isSubArray(conn.message, fooAsUint8Arr));
+  });
+
+  it('Test WSSharedDoc awarenessHandler', () => {
+    const docName = 'http://a.b.c/d.html';
+
+    const doc = new WSSharedDoc(docName);
+    doc.awareness.setLocalState('barrr');
+
+    assert.deepStrictEqual([updateHandler], Array.from(doc._observers.get('update')));
+    const ah = Array.from(doc.awareness._observers.get('update'));
+    assert.equal(1, ah.length);
+
+    assert.equal(0, doc.conns.size, 'Should not yet be any connections');
+
+    const sentMessages = [];
+    const mockConn = {
+      readyState: 1, // wsReadyStateOpen
+      send(m, e) { sentMessages.push({m, e}); }
+    };
+    doc.conns.set(mockConn, new Set());
+
+    ah[0]({added: [], updated: [doc.clientID], removed: []}, mockConn);
+
+    const barrAsUint8Arr = new Uint8Array(getAsciiChars('barrr'));
+    assert(isSubArray(sentMessages[0].m, barrAsUint8Arr));
+  });
+
+  it('Test setupWSConnection', async () => {
+    const savedBind = persistence.bindState;
+
+    try {
+      const bindCalls = [];
+      persistence.bindState = (nm, d, c) => bindCalls.push({nm, d, c});
+
+      const docName = 'https://somewhere.com/somedoc.html';
+      const eventListeners = new Map();
+      const closeCalls = [];
+      const mockConn = {
+        addEventListener(msg, fun) { eventListeners.set(msg, fun); },
+        close() { closeCalls.push('close'); },
+        readyState: 1, // wsReadyStateOpen
+        send() {}
+      };
+
+      assert.equal(0, bindCalls.length, 'Precondition');
+      assert.equal(0, eventListeners.size, 'Precondition');
+      await setupWSConnection(mockConn, docName);
+
+      assert.equal('arraybuffer', mockConn.binaryType);
+      assert.equal(1, bindCalls.length);
+      assert.equal(docName, bindCalls[0].nm);
+      assert.equal(docName, bindCalls[0].d.name);
+      assert.equal(mockConn, bindCalls[0].c);
+
+      const closeLsnr = eventListeners.get('close');
+      assert(closeLsnr);
+      const messageLsnr = eventListeners.get('message');
+      assert(messageLsnr);
+      // TODO maybe test more around the message listener?
+
+      assert.equal(0, closeCalls.length, 'Should not yet have recorded any close calls');
+      closeLsnr();
+      assert.deepStrictEqual(['close'], closeCalls);
+    } finally {
+      persistence.bindState = savedBind;
+    }
+  });
+
+  it('Test setupWSConnection sync step 1', async () => {
+    const savedBind = persistence.bindState;
+
+    try {
+      persistence.bindState = (nm, d, c) => {};
+
+      const docName = 'https://somewhere.com/mydoc.html';
+      const closeCalls = [];
+      const sendCalls = [];
+      const mockConn = {
+        addEventListener() {},
+        close() { closeCalls.push('close'); },
+        readyState: 1, // wsReadyStateOpen
+        send(m, e) { sendCalls.push({m, e}); }
+      };
+
+      await setupWSConnection(mockConn, docName);
+
+      assert.equal(0, closeCalls.length);
+      assert.equal(1, sendCalls.length);
+      assert.deepStrictEqual([0, 0, 1, 0], Array.from(sendCalls[0].m));
+    } finally {
+      persistence.bindState = savedBind;
+    }
+  });
+
+  it('Test message listener Sync', () => {
+    const connSent = []
+    const conn = {
+      readyState: 0, // wsReadyState
+      send(m, r) { connSent.push({m, r}); }
+    };
+
+    const emitted = []
+    const doc = new Y.Doc();
+    doc.emit = (t, e) => emitted.push({t, e});
+    doc.getMap('foo').set('bar', 'hello');
+
+    const message = [0, 0, 1, 0];
+
+    messageListener(conn, doc, new Uint8Array(message));
+    assert.equal(1, connSent.length);
+    assert(isSubArray(connSent[0].m, new Uint8Array(getAsciiChars('hello'))));
+
+    for (let i = 0; i < emitted.length; i++) {
+      assert(emitted[i].t !== 'error');
+    }
+  });
+
+  it('Test message listener awareness', () => {
+    // A fabricated message
+    const message = [
+      1, 247, 1, 1, 187, 143, 251, 213, 14, 21, 238, 1, 123, 34, 99, 117, 114, 115, 111,
+      114, 34, 58, 123, 34, 97, 110, 99, 104, 111, 114, 34, 58, 123, 34, 116, 121, 112,
+      101, 34, 58, 123, 34, 99, 108, 105, 101, 110, 116, 34, 58, 51, 49, 51, 52, 57, 50,
+      57, 54, 56, 55, 44, 34, 99, 108, 111, 99, 107, 34, 58, 49, 57, 125, 44, 34, 116,
+      110, 97, 109, 101, 34, 58, 110, 117, 108, 108, 44, 34, 105, 116, 101, 109, 34, 58,
+      123, 34, 99, 108, 105, 101, 110, 116, 34, 58, 51, 49, 51, 52, 57, 50, 57, 54, 56,
+      55, 44, 34, 99, 108, 111, 99, 107, 34, 58, 50, 48, 125, 44, 34, 97, 115, 115, 111,
+      99, 34, 58, 48, 125, 44, 34, 104, 101, 97, 100, 34, 58, 123, 34, 116, 121, 112,
+      101, 34, 58, 123, 34, 99, 108, 105, 101, 110, 116, 34, 58, 51, 49, 51, 52, 57, 50,
+      57, 54, 56, 55, 44, 34, 99, 108, 111, 99, 107, 34, 58, 49, 57, 125, 44, 34, 116,
+      110, 97, 109, 101, 34, 58, 110, 117, 108, 108, 44, 34, 105, 116, 101, 109, 34, 58,
+      123, 34, 99, 108, 105, 101, 110, 116, 34, 58, 51, 49, 51, 52, 57, 50, 57, 54, 56,
+      55, 44, 34, 99, 108, 111, 99, 107, 34, 58, 50, 48, 125, 44, 34, 97, 115, 115, 111,
+      99, 34, 58, 48, 125, 125, 125 ];
+
+      const awarenessEmitted = [];
+      const awareness = {
+        emit(t, d) { awarenessEmitted.push({t, d}); },
+        meta: new Map(),
+        states: new Map()
+      };
+
+      const docEmitted = [];
+      const doc = new Y.Doc();
+      doc.awareness = awareness;
+      doc.emit = (t, e) => docEmitted.push({t, e});
+
+      const conn = {};
+      messageListener(conn, doc, new Uint8Array(message));
+
+      assert(awarenessEmitted.length > 0);
+      for (let i = 0; i < awarenessEmitted.length; i++) {
+        assert(awarenessEmitted[i].t === 'change' ||
+          awarenessEmitted[i].t === 'update');
+        assert.deepStrictEqual([3938371515], awarenessEmitted[i].d[0].added)
+        assert.equal(awarenessEmitted[i].d[1], conn);
+      }
+
+      for (let i = 0; i < docEmitted.length; i++) {
+        assert(docEmitted[i].t !== 'error');
+      }
+    });
 });
