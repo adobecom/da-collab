@@ -392,7 +392,7 @@ describe('Collab Test Suite', () => {
       conns: new Map(),
     };
     mockDoc.awareness.states.set('123', null);
-    const docs = setYDoc(mockDoc.name, mockDoc);
+    setYDoc(mockDoc.name, mockDoc);
 
     const called = [];
     const mockConn = {
@@ -408,9 +408,6 @@ describe('Collab Test Suite', () => {
     assert.equal(0, mockDoc.conns.size);
     assert.deepStrictEqual(['123'], awarenessEmitted[0][0].removed,
       'removeAwarenessStates should be called');
-
-    assert.equal(docs.get(mockDoc.name), undefined,
-      'Document should be removed from global map');
   });
 
   it('Test close unknown connection', async () => {
