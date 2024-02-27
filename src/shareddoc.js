@@ -44,6 +44,7 @@ export const closeConn = (doc, conn) => {
 const send = (doc, conn, m) => {
   if (conn.readyState !== wsReadyStateConnecting && conn.readyState !== wsReadyStateOpen) {
     closeConn(doc, conn);
+    return;
   }
   try {
     conn.send(m, (err) => err != null && closeConn(doc, conn));
@@ -196,16 +197,32 @@ export class WSSharedDoc extends Y.Doc {
   }
 }
 
+function wait(milliseconds) {
+  return new Promise((r) => {
+    setTimeout(r, milliseconds);
+  });
+}
+
+const getBindPromise = async (docName, doc, conn) => {
+  const existingPromise = doc.promise;
+  if (existingPromise) {
+    return wait(500).then(() => existingPromise);
+  } else {
+    return persistence.bindState(docName, doc, conn);
+  }
+};
+
 export const getYDoc = async (docname, conn, gc = true) => {
   let doc = docs.get(docname);
   if (doc === undefined) {
     doc = new WSSharedDoc(docname);
     doc.gc = gc;
-    if (persistence !== null) {
-      await persistence.bindState(docname, doc, conn);
-    }
     docs.set(docname, doc);
   }
+  doc.conns.set(conn, new Set());
+  doc.promise = getBindPromise(docname, doc, conn);
+
+  await doc.promise;
   return doc;
 };
 
@@ -259,7 +276,6 @@ export const setupWSConnection = async (conn, docName) => {
   // get doc, initialize if it does not exist yet
   const doc = await getYDoc(docName, conn, true);
 
-  doc.conns.set(conn, new Set());
   // listen and reply to events
   conn.addEventListener('message', (message) => messageListener(conn, doc, new Uint8Array(message.data)));
 
