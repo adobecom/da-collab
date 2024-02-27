@@ -206,9 +206,17 @@ function wait(milliseconds) {
 const getBindPromise = async (docName, doc, conn) => {
   const existingPromise = doc.promise;
   if (existingPromise) {
-    return wait(500).then(() => existingPromise);
+    if (doc.boundState) {
+      return existingPromise;
+    } else {
+      return wait(500).then(() => existingPromise);
+    }
   } else {
-    return persistence.bindState(docName, doc, conn);
+    return persistence.bindState(docName, doc, conn)
+      .then(() => {
+        // eslint-disable-next-line no-param-reassign
+        doc.boundState = true;
+      });
   }
 };
 
