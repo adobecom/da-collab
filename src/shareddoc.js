@@ -206,7 +206,8 @@ function wait(milliseconds) {
 const getBindPromise = async (docName, doc, conn) => {
   const existingPromise = doc.promise;
   if (existingPromise) {
-    if (doc.boundState) {
+    const hasContent = doc.getMap('aem')?.has('content');
+    if (doc.boundState && hasContent) {
       return existingPromise;
     } else {
       return wait(500).then(() => existingPromise);
