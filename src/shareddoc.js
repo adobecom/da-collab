@@ -197,20 +197,35 @@ export class WSSharedDoc extends Y.Doc {
   }
 }
 
-function wait(milliseconds) {
+export function wait(milliseconds) {
   return new Promise((r) => {
     setTimeout(r, milliseconds);
   });
 }
 
-const getBindPromise = async (docName, doc, conn) => {
-  const existingPromise = doc.promise;
+/* Get a promise that resolves when the document is bound to persistence.
+   Multiple clients may be looking for the same document, but they should all
+   wait using it until it's bound to the persistence.
+
+   The first request here will create a promise that resolves when bindState
+   has completed. This promise is also stored on the doc.promise field and is
+   passed in on later calls on this doc as the existingPromise.
+   On subsequent if there is already an existingPromise, then wait on that same
+   promise. However if the promise hasn't resolved yet
+   or there is no content in the doc, then wait for 500 ms to avoid all clients
+   from getting connected at exactly the same time, which can result in editor
+   content being duplicated. The promise is then replaced with a new promise that
+   has the wait included. Subsequent calls will add a further wait and so on.
+   Once the persistence is bound and the document has content, the same promise
+   is returned, but that one is already resolved so it's available immediately.
+ */
+export const getBindPromise = async (docName, doc, conn, existingPromise, fnWait = wait) => {
   if (existingPromise) {
     const hasContent = doc.getMap('aem')?.has('content');
     if (doc.boundState && hasContent) {
       return existingPromise;
     } else {
-      return wait(500).then(() => existingPromise);
+      return fnWait(500).then(() => existingPromise);
     }
   } else {
     return persistence.bindState(docName, doc, conn)
@@ -229,7 +244,7 @@ export const getYDoc = async (docname, conn, gc = true) => {
     docs.set(docname, doc);
   }
   doc.conns.set(conn, new Set());
-  doc.promise = getBindPromise(docname, doc, conn);
+  doc.promise = getBindPromise(docname, doc, conn, doc.promise);
 
   await doc.promise;
   return doc;
