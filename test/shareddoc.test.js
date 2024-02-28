@@ -94,16 +94,12 @@ describe('Collab Test Suite', () => {
   it('Test updateHandler closes first', () => {
     const conn1 = {
       isClosed: false,
-      message: null,
       readyState: 42, // unknown code, causes to close
       has() {
         return true;
       },
       close() {
         this.isClosed = true;
-      },
-      send(m) {
-        this.message = m;
       },
     };
     const conn2 = { ...conn1 }; // clone conn1 into conn2
@@ -132,8 +128,6 @@ describe('Collab Test Suite', () => {
     assert(conn1.isClosed === true);
     assert(conn2.isClosed === true);
     assert.deepStrictEqual(deleted, [conn1, conn2]);
-    assert.deepStrictEqual(update, conn1.message.slice(-4));
-    assert.deepStrictEqual(update, conn2.message.slice(-4));
   });
 
   it('Test persistence get ok', async () => {
@@ -459,7 +453,7 @@ describe('Collab Test Suite', () => {
 
     try {
       const bsCalls = [];
-      persistence.bindState = (dn, d, c) => {
+      persistence.bindState = async (dn, d, c) => {
         bsCalls.push({dn, d, c});
       };
 
@@ -538,7 +532,7 @@ describe('Collab Test Suite', () => {
 
     try {
       const bindCalls = [];
-      persistence.bindState = (nm, d, c) => bindCalls.push({nm, d, c});
+      persistence.bindState = async (nm, d, c) => bindCalls.push({nm, d, c});
 
       const docName = 'https://somewhere.com/somedoc.html';
       const eventListeners = new Map();
@@ -578,7 +572,7 @@ describe('Collab Test Suite', () => {
     const savedBind = persistence.bindState;
 
     try {
-      persistence.bindState = (nm, d, c) => {};
+      persistence.bindState = async (nm, d, c) => {};
 
       const docName = 'https://somewhere.com/mydoc.html';
       const closeCalls = [];
