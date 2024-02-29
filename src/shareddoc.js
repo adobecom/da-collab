@@ -44,6 +44,7 @@ export const closeConn = (doc, conn) => {
 const send = (doc, conn, m) => {
   if (conn.readyState !== wsReadyStateConnecting && conn.readyState !== wsReadyStateOpen) {
     closeConn(doc, conn);
+    return;
   }
   try {
     conn.send(m, (err) => err != null && closeConn(doc, conn));
@@ -196,16 +197,56 @@ export class WSSharedDoc extends Y.Doc {
   }
 }
 
+export function wait(milliseconds) {
+  return new Promise((r) => {
+    setTimeout(r, milliseconds);
+  });
+}
+
+/* Get a promise that resolves when the document is bound to persistence.
+   Multiple clients may be looking for the same document, but they should all
+   wait using it until it's bound to the persistence.
+
+   The first request here will create a promise that resolves when bindState
+   has completed. This promise is also stored on the doc.promise field and is
+   passed in on later calls on this doc as the existingPromise.
+   On subsequent if there is already an existingPromise, then wait on that same
+   promise. However if the promise hasn't resolved yet
+   or there is no content in the doc, then wait for 500 ms to avoid all clients
+   from getting connected at exactly the same time, which can result in editor
+   content being duplicated. The promise is then replaced with a new promise that
+   has the wait included. Subsequent calls will add a further wait and so on.
+   Once the persistence is bound and the document has content, the same promise
+   is returned, but that one is already resolved so it's available immediately.
+ */
+export const getBindPromise = async (docName, doc, conn, existingPromise, fnWait = wait) => {
+  if (existingPromise) {
+    const hasContent = doc.getMap('aem')?.has('content');
+    if (doc.boundState && hasContent) {
+      return existingPromise;
+    } else {
+      return fnWait(500).then(() => existingPromise);
+    }
+  } else {
+    return persistence.bindState(docName, doc, conn)
+      .then(() => {
+        // eslint-disable-next-line no-param-reassign
+        doc.boundState = true;
+      });
+  }
+};
+
 export const getYDoc = async (docname, conn, gc = true) => {
   let doc = docs.get(docname);
   if (doc === undefined) {
     doc = new WSSharedDoc(docname);
     doc.gc = gc;
-    if (persistence !== null) {
-      await persistence.bindState(docname, doc, conn);
-    }
     docs.set(docname, doc);
   }
+  doc.conns.set(conn, new Set());
+  doc.promise = getBindPromise(docname, doc, conn, doc.promise);
+
+  await doc.promise;
   return doc;
 };
 
@@ -259,7 +300,6 @@ export const setupWSConnection = async (conn, docName) => {
   // get doc, initialize if it does not exist yet
   const doc = await getYDoc(docName, conn, true);
 
-  doc.conns.set(conn, new Set());
   // listen and reply to events
   conn.addEventListener('message', (message) => messageListener(conn, doc, new Uint8Array(message.data)));
 
