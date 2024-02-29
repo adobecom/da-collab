@@ -397,6 +397,7 @@ describe('Collab Test Suite', () => {
     mockDoc.conns.set(mockConn, ids);
 
     assert.equal(0, called.length, 'Precondition');
+    assert(docs.get(mockDoc.name), 'Precondition');
     closeConn(mockDoc, mockConn);
     assert.deepStrictEqual(['close'], called);
     assert.equal(0, mockDoc.conns.size);
@@ -405,6 +406,8 @@ describe('Collab Test Suite', () => {
 
     assert.equal(docs.get(mockDoc.name), undefined,
       'Document should be removed from global map');
+
+    assert(docs.get(mockDoc.name) === undefined, 'Should have been removed from docs map');
   });
 
   it('Test close unknown connection', async () => {
