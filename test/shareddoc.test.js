@@ -13,9 +13,9 @@ import * as Y from 'yjs';
 import assert from 'assert';
 
 import {
-  closeConn, getYDoc, invalidateFromAdmin, messageListener, persistence, setupWSConnection, setYDoc, updateHandler, WSSharedDoc,
+  closeConn, getBindPromise, getYDoc, invalidateFromAdmin, messageListener, persistence,
+  setupWSConnection, setYDoc, updateHandler, WSSharedDoc,
 } from '../src/shareddoc.js';
-import { uint8Array } from 'lib0/prng.js';
 
 function isSubArray(full, sub) {
   if (sub.length === 0) {
@@ -94,16 +94,12 @@ describe('Collab Test Suite', () => {
   it('Test updateHandler closes first', () => {
     const conn1 = {
       isClosed: false,
-      message: null,
       readyState: 42, // unknown code, causes to close
       has() {
         return true;
       },
       close() {
         this.isClosed = true;
-      },
-      send(m) {
-        this.message = m;
       },
     };
     const conn2 = { ...conn1 }; // clone conn1 into conn2
@@ -132,8 +128,6 @@ describe('Collab Test Suite', () => {
     assert(conn1.isClosed === true);
     assert(conn2.isClosed === true);
     assert.deepStrictEqual(deleted, [conn1, conn2]);
-    assert.deepStrictEqual(update, conn1.message.slice(-4));
-    assert.deepStrictEqual(update, conn2.message.slice(-4));
   });
 
   it('Test persistence get ok', async () => {
@@ -462,7 +456,7 @@ describe('Collab Test Suite', () => {
 
     try {
       const bsCalls = [];
-      persistence.bindState = (dn, d, c) => {
+      persistence.bindState = async (dn, d, c) => {
         bsCalls.push({dn, d, c});
       };
 
@@ -541,7 +535,7 @@ describe('Collab Test Suite', () => {
 
     try {
       const bindCalls = [];
-      persistence.bindState = (nm, d, c) => bindCalls.push({nm, d, c});
+      persistence.bindState = async (nm, d, c) => bindCalls.push({nm, d, c});
 
       const docName = 'https://somewhere.com/somedoc.html';
       const eventListeners = new Map();
@@ -581,9 +575,9 @@ describe('Collab Test Suite', () => {
     const savedBind = persistence.bindState;
 
     try {
-      persistence.bindState = (nm, d, c) => {};
+      persistence.bindState = async (nm, d, c) => {};
 
-      const docName = 'https://somewhere.com/mydoc.html';
+      const docName = 'https://somewhere.com/myotherdoc.html';
       const closeCalls = [];
       const sendCalls = [];
       const mockConn = {
@@ -601,8 +595,18 @@ describe('Collab Test Suite', () => {
         states: awarenessStates
       };
 
+      // Set something on the 'content' value of the 'aem' map. This saves the
+      // getYDoc call from waiting 500 ms when called via setupWSConnection.
+      const docAEMMap = new Map();
+      docAEMMap.set('content', 'something');
+
       const ydoc = await getYDoc(docName, mockConn, true);
       ydoc.awareness = awareness;
+      ydoc.getMap = (n) => {
+        if (n === 'aem') {
+          return docAEMMap;
+        }
+      }
 
       await setupWSConnection(mockConn, docName);
 
@@ -683,4 +687,96 @@ describe('Collab Test Suite', () => {
         assert(docEmitted[i].t !== 'error');
       }
     });
+
+    it('Test getBindPromise', async () => {
+      const savedBS = persistence.bindState;
+
+      try {
+        const calls = [];
+        persistence.bindState = async () => {
+          calls.push('bindState');
+        };
+
+        const mockWait = async () => {
+          calls.push('wait');
+        };
+
+        const docName = 'http://foo.bar/123.4.html';
+        const mockDoc = {};
+        const mockConn = {};
+
+        assert.equal(0, calls.length, 'Precondition');
+        assert(!mockDoc.boundState, 'Precondition');
+        const pr = getBindPromise(docName, mockDoc, mockConn, undefined, mockWait);
+        await pr;
+        console.log('Calls', calls);
+        assert.deepStrictEqual(['bindState'], calls);
+        assert(mockDoc.boundState);
+      } finally {
+        persistence.bindState = savedBS;
+      }
+    });
+
+    it('Test getBindPromise2', async () => {
+      const savedBS = persistence.bindState;
+
+      try {
+        const calls = [];
+        persistence.bindState = async () => {
+          calls.push('bindState');
+        };
+
+        const mockWait = async () => {
+          calls.push('wait');
+        };
+
+        const docName = 'http://foo.bar/123.4.html';
+        const mockDoc = {
+          getMap: () => undefined,
+        };
+
+        assert.equal(0, calls.length, 'Precondition');
+        assert(!mockDoc.boundState, 'Precondition');
+        const pr = getBindPromise(docName, mockDoc, {}, undefined, mockWait);
+
+        // Make a second request
+        assert(!mockDoc.boundState, 'Should not yet have the state bound as promise is not yet resolved');
+        const pr2 = getBindPromise(docName, mockDoc, {}, pr, mockWait);
+
+        await pr;
+        await pr2;
+
+        assert.equal(2, calls.length);
+        assert(calls.includes('bindState'), 'Should be 1 call to bindState');
+        assert(calls.includes('wait'), 'Should be 1 call to wait');
+
+        assert(mockDoc.boundState);
+
+        // Make a 3rd request
+        const docMap = new Map();
+        mockDoc.getMap = (m) => {
+          if (m === 'aem') {
+            return docMap;
+          }
+        }
+        const pr3 = getBindPromise(docName, mockDoc, {}, pr2, mockWait);
+        await pr3;
+
+        assert.equal(3, calls.length);
+
+        // Count the occurrences of items in the array
+        const countMap = calls.reduce((a, e) => a.set(e, (a.get(e) || 0) + 1), new Map());
+        assert.equal(1, countMap.get('bindState'), 'Should still be only 1 call to bindState');
+        assert.equal(2, countMap.get('wait'), 'Should still call wait as the content is not yet on the doc');
+
+        // Make a 4th request, now with the content in the doc map
+        docMap.set('content', 'some content');
+        const callsClone = [...calls];
+        await getBindPromise(docName, mockDoc, {}, pr3, mockWait);
+        assert.deepStrictEqual(calls, callsClone, 'Should not be any more calls made, as the content is there');
+      } finally {
+        persistence.bindState = savedBS;
+      }
+    });
+
 });

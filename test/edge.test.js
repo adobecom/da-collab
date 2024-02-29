@@ -169,7 +169,7 @@ describe('Worker test suite', () => {
 
     try {
       const bindCalled = [];
-      persistence.bindState = (nm, d, c) => bindCalled.push({nm, d, c});
+      persistence.bindState = async (nm, d, c) => bindCalled.push({nm, d, c});
 
       const wspCalled = [];
       const wsp0 = {};
@@ -195,6 +195,8 @@ describe('Worker test suite', () => {
 
       assert.equal(1, bindCalled.length);
       assert.equal('http://foo.bar/1/2/3.html', bindCalled[0].nm);
+
+      assert.equal('au123', wsp1.auth);
 
       const acceptIdx = wspCalled.indexOf('accept');
       const alMessIdx = wspCalled.indexOf('addEventListener message');
