@@ -223,9 +223,17 @@ export const getBindPromise = async (docName, doc, conn, existingPromise, fnWait
   if (existingPromise) {
     const hasContent = doc.getMap('aem')?.has('content');
     if (doc.boundState && hasContent) {
+      // eslint-disable-next-line no-param-reassign
+      delete doc.promiseParties;
       return existingPromise;
     } else {
-      return fnWait(500).then(() => existingPromise);
+      if (!doc.promiseParties) {
+        // eslint-disable-next-line no-param-reassign
+        doc.promiseParties = [];
+      }
+      doc.promiseParties.push('true'); // wait extra for each interested party
+      await fnWait(doc.promiseParties.length * 500);
+      return existingPromise;
     }
   } else {
     return persistence.bindState(docName, doc, conn)
