@@ -726,8 +726,8 @@ describe('Collab Test Suite', () => {
           calls.push('bindState');
         };
 
-        const mockWait = async () => {
-          calls.push('wait');
+        const mockWait = async (amount) => {
+          calls.push(`wait ${amount}`);
         };
 
         const docName = 'http://foo.bar/123.4.html';
@@ -748,7 +748,7 @@ describe('Collab Test Suite', () => {
 
         assert.equal(2, calls.length);
         assert(calls.includes('bindState'), 'Should be 1 call to bindState');
-        assert(calls.includes('wait'), 'Should be 1 call to wait');
+        assert(calls.includes('wait 500'), 'Should be 1 call to wait');
 
         assert(mockDoc.boundState);
 
@@ -765,9 +765,9 @@ describe('Collab Test Suite', () => {
         assert.equal(3, calls.length);
 
         // Count the occurrences of items in the array
-        const countMap = calls.reduce((a, e) => a.set(e, (a.get(e) || 0) + 1), new Map());
-        assert.equal(1, countMap.get('bindState'), 'Should still be only 1 call to bindState');
-        assert.equal(2, countMap.get('wait'), 'Should still call wait as the content is not yet on the doc');
+        assert(calls.includes('bindState'), 'Should be 1 call to bindState');
+        assert(calls.includes('wait 500'), 'Should be 1 call to wait with wait 500');
+        assert(calls.includes('wait 1000'), 'Should be 1 call to wait with wait 1000');
 
         // Make a 4th request, now with the content in the doc map
         docMap.set('content', 'some content');
