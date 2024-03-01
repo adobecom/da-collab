@@ -39,4 +39,5 @@ jobs:
         flags: unittests # optional
         name: codecov-umbrella # optional
         token: ${{ secrets.CODECOV_TOKEN }} # required
+        slug: bosschaert/da-collab
         verbose: true # optional (default = false)
