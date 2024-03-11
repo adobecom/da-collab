@@ -108,7 +108,18 @@ export async function handleApiRequest(request, env, ffetch = fetch) {
     if (auth) {
       opts.headers = new Headers({ Authorization: auth });
     }
-    const initialReq = await ffetch(docName, opts);
+
+    let initialReq;
+    if (env.daadmin) {
+      // If service binding set, use that to call da-admin
+
+      // eslint-disable-next-line no-console
+      console.log('Using service binding to contact da-admin');
+      initialReq = await env.daadmin.fetch(docName, opts);
+    } else {
+      initialReq = await ffetch(docName, opts);
+    }
+
     if (!initialReq.ok && initialReq.status !== 404) {
       // eslint-disable-next-line no-console
       console.log(`${initialReq.status} - ${initialReq.statusText}`);
@@ -239,6 +250,6 @@ export class DocRoom {
     // eslint-disable-next-line no-console
     console.log(`setupWSConnection ${docName} with auth(${webSocket.auth
       ? webSocket.auth.substring(0, webSocket.auth.indexOf(' ')) : 'none'})`);
-    await setupWSConnection(webSocket, docName);
+    await setupWSConnection(webSocket, docName, this.env);
   }
 }

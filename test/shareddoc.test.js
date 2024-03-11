@@ -464,15 +464,18 @@ describe('Collab Test Suite', () => {
       const mockConn = {};
 
       assert.equal(0, bsCalls.length, 'Precondition');
-      const doc = await getYDoc(docName, mockConn);
+      const doc = await getYDoc(docName, mockConn, {});
       assert.equal(1, bsCalls.length);
       assert.equal(bsCalls[0].dn, docName);
       assert.equal(bsCalls[0].d, doc);
       assert.equal(bsCalls[0].c, mockConn);
 
-      const doc2 = await getYDoc(docName, mockConn);
+      const daadmin = { foo: 'bar' }
+      const env = { daadmin };
+      const doc2 = await getYDoc(docName, mockConn, env);
       assert.equal(1, bsCalls.length, 'Should not have called bindstate again');
       assert.equal(doc, doc2);
+      assert.equal('bar', doc.daadmin.foo, 'Should have bound daadmin now');
     } finally {
       persistence.bindState = savedBS;
     }
@@ -547,21 +550,24 @@ describe('Collab Test Suite', () => {
         send() {}
       };
 
+      const daadmin = { a: 'b' };
+      const env = { daadmin };
+
       assert.equal(0, bindCalls.length, 'Precondition');
       assert.equal(0, eventListeners.size, 'Precondition');
-      await setupWSConnection(mockConn, docName);
+      await setupWSConnection(mockConn, docName, env);
 
       assert.equal('arraybuffer', mockConn.binaryType);
       assert.equal(1, bindCalls.length);
       assert.equal(docName, bindCalls[0].nm);
       assert.equal(docName, bindCalls[0].d.name);
+      assert.equal('b', bindCalls[0].d.daadmin.a);
       assert.equal(mockConn, bindCalls[0].c);
 
       const closeLsnr = eventListeners.get('close');
       assert(closeLsnr);
       const messageLsnr = eventListeners.get('message');
       assert(messageLsnr);
-      // TODO maybe test more around the message listener?
 
       assert.equal(0, closeCalls.length, 'Should not yet have recorded any close calls');
       closeLsnr();
@@ -600,7 +606,7 @@ describe('Collab Test Suite', () => {
       const docAEMMap = new Map();
       docAEMMap.set('content', 'something');
 
-      const ydoc = await getYDoc(docName, mockConn, true);
+      const ydoc = await getYDoc(docName, mockConn, {}, true);
       ydoc.awareness = awareness;
       ydoc.getMap = (n) => {
         if (n === 'aem') {
@@ -608,7 +614,7 @@ describe('Collab Test Suite', () => {
         }
       }
 
-      await setupWSConnection(mockConn, docName);
+      await setupWSConnection(mockConn, docName, {});
 
       assert.equal(0, closeCalls.length);
       assert.equal(2, sendCalls.length);

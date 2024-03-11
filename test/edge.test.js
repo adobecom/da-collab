@@ -180,7 +180,8 @@ describe('Worker test suite', () => {
       }
       DocRoom.newWebSocketPair = () => [wsp0, wsp1];
 
-      const dr = new DocRoom({ storage: null }, null);
+      const daadmin = { blah: 1234 };
+      const dr = new DocRoom({ storage: null }, { daadmin });
       const headers = new Map();
       headers.set('Upgrade', 'websocket');
       headers.set('Authorization', 'au123');
@@ -195,6 +196,7 @@ describe('Worker test suite', () => {
 
       assert.equal(1, bindCalled.length);
       assert.equal('http://foo.bar/1/2/3.html', bindCalled[0].nm);
+      assert.equal('1234', bindCalled[0].d.daadmin.blah);
 
       assert.equal('au123', wsp1.auth);
 
@@ -297,6 +299,31 @@ describe('Worker test suite', () => {
     assert.equal('qrtoefi', rfreq.headers.get('Authorization'));
     assert.equal('myval', rfreq.headers.get('myheader'));
     assert.equal('https://admin.da.live/laaa.html', rfreq.headers.get('X-collab-room'));
+  });
+
+  it('Test handleApiRequest via Service Binding', async () => {
+    const headers = new Map();
+    headers.set('myheader', 'myval');
+    const req = {
+      url: 'http://do.re.mi/https://admin.da.live/laaa.html?Authorization=lala',
+      headers
+    }
+
+    const mockFetch = async (url, opts) => {
+      if (opts.method === 'HEAD'
+        && url === 'https://admin.da.live/laaa.html'
+        && opts.headers.get('Authorization') === 'lala') {
+        return new Response(null, {status: 410});
+      }
+    };
+
+    // This is how a service binding is exposed to the program, via env
+    const env = {
+      daadmin: { fetch : mockFetch }
+    };
+
+    const res = await handleApiRequest(req, env);
+    assert.equal(410, res.status);
   });
 
   it('Test handleApiRequest wrong host', async () => {
