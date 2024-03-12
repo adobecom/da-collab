@@ -56,8 +56,18 @@ async function syncAdmin(url, request, env) {
   return roomObject.fetch(new URL(`${doc}?api=syncAdmin`));
 }
 
+function ping() {
+  const json = `{
+  "status": "ok"
+}
+`;
+  return new Response(json, { status: 200 });
+}
+
 async function handleApiCall(url, request, env) {
   switch (url.pathname) {
+    case '/api/v1/ping':
+      return ping();
     case '/api/v1/syncadmin':
       return syncAdmin(url, request, env);
     default:
