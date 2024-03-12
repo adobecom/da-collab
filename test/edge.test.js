@@ -318,4 +318,15 @@ describe('Worker test suite', () => {
     const res = await handleApiRequest(req, {}, mockFetch);
     assert.equal(401, res.status);
   });
+
+  it('Test ping API', async () => {
+    const req = {
+      url: 'http://do.re.mi/api/v1/ping',
+    }
+
+    const res = await defaultEdge.fetch(req, {});
+    assert.equal(200, res.status);
+    const json = await res.json();
+    assert.equal('ok', json.status);
+  });
 });
