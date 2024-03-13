@@ -355,5 +355,18 @@ describe('Worker test suite', () => {
     assert.equal(200, res.status);
     const json = await res.json();
     assert.equal('ok', json.status);
+    assert.deepStrictEqual([], json.service_bindings);
+  });
+
+  it('Test ping API with service binding', async () => {
+    const req = {
+      url: 'http://some.host.name/api/v1/ping',
+    }
+
+    const res = await defaultEdge.fetch(req, { daadmin: {}});
+    assert.equal(200, res.status);
+    const json = await res.json();
+    assert.equal('ok', json.status);
+    assert.deepStrictEqual(['da-admin'], json.service_bindings);
   });
 });

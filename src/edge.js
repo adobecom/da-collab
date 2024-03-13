@@ -56,9 +56,12 @@ async function syncAdmin(url, request, env) {
   return roomObject.fetch(new URL(`${doc}?api=syncAdmin`));
 }
 
-function ping() {
+function ping(env) {
+  const adminsb = env.daadmin !== undefined ? '"da-admin"' : '';
+
   const json = `{
-  "status": "ok"
+  "status": "ok",
+  "service_bindings": [${adminsb}]
 }
 `;
   return new Response(json, { status: 200 });
@@ -67,7 +70,7 @@ function ping() {
 async function handleApiCall(url, request, env) {
   switch (url.pathname) {
     case '/api/v1/ping':
-      return ping();
+      return ping(env);
     case '/api/v1/syncadmin':
       return syncAdmin(url, request, env);
     default:
