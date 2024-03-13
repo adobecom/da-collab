@@ -56,12 +56,13 @@ const send = (doc, conn, m) => {
 export const persistence = {
   fetch: fetch.bind(this),
   closeConn: closeConn.bind(this),
-  get: async (docName, auth) => {
+  get: async (docName, auth, daadmin) => {
+    const fobj = daadmin || persistence;
     const initalOpts = {};
     if (auth) {
       initalOpts.headers = new Headers({ Authorization: auth });
     }
-    const initialReq = await persistence.fetch(docName, initalOpts);
+    const initialReq = await fobj.fetch(docName, initalOpts);
     if (initialReq.ok) {
       return initialReq.text();
     } else if (initialReq.status === 404) {
@@ -89,7 +90,9 @@ export const persistence = {
       });
     }
 
-    const { ok, status, statusText } = await persistence.fetch(ydoc.name, opts);
+    // Use service binding if available
+    const fobj = ydoc.daadmin || persistence;
+    const { ok, status, statusText } = await fobj.fetch(ydoc.name, opts);
 
     return {
       ok,
@@ -102,7 +105,7 @@ export const persistence = {
       .map((con) => con.auth);
     const authHeader = auth.length > 0 ? [...new Set(auth)].join(',') : undefined;
 
-    const svrContent = await persistence.get(ydoc.name, authHeader);
+    const svrContent = await persistence.get(ydoc.name, authHeader, ydoc.daadmin);
     const aemMap = ydoc.getMap('aem');
     const cliContent = aemMap.get('content');
     if (svrContent !== cliContent) {
@@ -141,7 +144,7 @@ export const persistence = {
     const persistedYdoc = new Y.Doc();
     const aemMap = persistedYdoc.getMap('aem');
 
-    let current = await persistence.get(docName, conn.auth);
+    let current = await persistence.get(docName, conn.auth, ydoc.daadmin);
 
     aemMap.set('initial', current);
 
@@ -244,7 +247,7 @@ export const getBindPromise = async (docName, doc, conn, existingPromise, fnWait
   }
 };
 
-export const getYDoc = async (docname, conn, gc = true) => {
+export const getYDoc = async (docname, conn, env, gc = true) => {
   let doc = docs.get(docname);
   if (doc === undefined) {
     doc = new WSSharedDoc(docname);
@@ -252,6 +255,7 @@ export const getYDoc = async (docname, conn, gc = true) => {
     docs.set(docname, doc);
   }
   doc.conns.set(conn, new Set());
+  doc.daadmin = env.daadmin;
   doc.promise = getBindPromise(docname, doc, conn, doc.promise);
 
   await doc.promise;
@@ -302,11 +306,11 @@ export const invalidateFromAdmin = async (docName) => {
   return false;
 };
 
-export const setupWSConnection = async (conn, docName) => {
+export const setupWSConnection = async (conn, docName, env) => {
   // eslint-disable-next-line no-param-reassign
   conn.binaryType = 'arraybuffer';
   // get doc, initialize if it does not exist yet
-  const doc = await getYDoc(docName, conn, true);
+  const doc = await getYDoc(docName, conn, env, true);
 
   // listen and reply to events
   conn.addEventListener('message', (message) => messageListener(conn, doc, new Uint8Array(message.data)));
