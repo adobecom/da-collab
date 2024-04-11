@@ -253,6 +253,6 @@ export class DocRoom {
     // eslint-disable-next-line no-console
     console.log(`setupWSConnection ${docName} with auth(${webSocket.auth
       ? webSocket.auth.substring(0, webSocket.auth.indexOf(' ')) : 'none'})`);
-    await setupWSConnection(webSocket, docName, this.env);
+    await setupWSConnection(webSocket, docName, this.env, this.storage);
   }
 }

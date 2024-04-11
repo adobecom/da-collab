@@ -140,19 +140,27 @@ export const persistence = {
     }
     return current;
   },
-  bindState: async (docName, ydoc, conn) => {
+  bindState: async (docName, ydoc, conn, storage) => {
     const persistedYdoc = new Y.Doc();
     const aemMap = persistedYdoc.getMap('aem');
 
     let current = await persistence.get(docName, conn.auth, ydoc.daadmin);
+    const stored = await storage.get('docstore');
+    if (stored) {
+      Y.applyUpdate(ydoc, stored);
+    } else {
+      aemMap.set('initial', current);
 
-    aemMap.set('initial', current);
+      Y.applyUpdate(ydoc, Y.encodeStateAsUpdate(persistedYdoc));
+    }
 
-    Y.applyUpdate(ydoc, Y.encodeStateAsUpdate(persistedYdoc));
-
-    ydoc.on('update', debounce(async () => {
-      current = await persistence.update(ydoc, current);
-    }, 2000, 10000));
+    ydoc.on('update', () => {
+      const state = Y.encodeStateAsUpdate(ydoc);
+      storage.put('docstore', state);
+      debounce(async () => {
+        current = await persistence.update(ydoc, current);
+      }, 2000, 10000);
+    });
   },
 };
 
@@ -222,7 +230,8 @@ export function wait(milliseconds) {
    Once the persistence is bound and the document has content, the same promise
    is returned, but that one is already resolved so it's available immediately.
  */
-export const getBindPromise = async (docName, doc, conn, existingPromise, fnWait = wait) => {
+export const getBindPromise = async (
+  docName, doc, conn, existingPromise, storage, fnWait = wait) => {
   if (existingPromise) {
     const hasContent = doc.getMap('aem')?.has('content');
     if (doc.boundState && hasContent) {
@@ -239,7 +248,7 @@ export const getBindPromise = async (docName, doc, conn, existingPromise, fnWait
       return existingPromise;
     }
   } else {
-    return persistence.bindState(docName, doc, conn)
+    return persistence.bindState(docName, doc, conn, storage)
       .then(() => {
         // eslint-disable-next-line no-param-reassign
         doc.boundState = true;
@@ -247,16 +256,19 @@ export const getBindPromise = async (docName, doc, conn, existingPromise, fnWait
   }
 };
 
-export const getYDoc = async (docname, conn, env, gc = true) => {
+export const getYDoc = async (docname, conn, env, storage, gc = true) => {
   let doc = docs.get(docname);
   if (doc === undefined) {
     doc = new WSSharedDoc(docname);
     doc.gc = gc;
     docs.set(docname, doc);
   }
-  doc.conns.set(conn, new Set());
+
+  if (!doc.conns.get(conn)) {
+    doc.conns.set(conn, new Set());
+  }
   doc.daadmin = env.daadmin;
-  doc.promise = getBindPromise(docname, doc, conn, doc.promise);
+  doc.promise = getBindPromise(docname, doc, conn, doc.promise, storage);
 
   await doc.promise;
   return doc;
@@ -306,11 +318,11 @@ export const invalidateFromAdmin = async (docName) => {
   return false;
 };
 
-export const setupWSConnection = async (conn, docName, env) => {
+export const setupWSConnection = async (conn, docName, env, storage) => {
   // eslint-disable-next-line no-param-reassign
   conn.binaryType = 'arraybuffer';
   // get doc, initialize if it does not exist yet
-  const doc = await getYDoc(docName, conn, env, true);
+  const doc = await getYDoc(docName, conn, env, storage, true);
 
   // listen and reply to events
   conn.addEventListener('message', (message) => messageListener(conn, doc, new Uint8Array(message.data)));
