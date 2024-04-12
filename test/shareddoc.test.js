@@ -11,6 +11,7 @@
  */
 import * as Y from 'yjs';
 import assert from 'assert';
+import esmock from 'esmock';
 
 import {
   closeConn, getBindPromise, getYDoc, invalidateFromAdmin, messageListener, persistence,
@@ -50,6 +51,12 @@ function getAsciiChars(str) {
     codes.push(c.charCodeAt(0));
   }
   return codes;
+}
+
+function wait(milliseconds) {
+  return new Promise((r) => {
+    setTimeout(r, milliseconds);
+  });
 }
 
 describe('Collab Test Suite', () => {
@@ -431,25 +438,147 @@ describe('Collab Test Suite', () => {
 
     const docName = 'http://lalala.com/ha/ha/ha.html';
     const testYDoc = new Y.Doc();
+    testYDoc.daadmin = 'daadmin';
     const mockConn = {
       auth: 'myauth'
     };
 
+    const mockStorage = { list: () => new Map() };
+
     try {
-      persistence.get = async (nm, au) => `Get: ${nm}-${au}`;
+      persistence.get = async (nm, au, ad) => `Get: ${nm}-${au}-${ad}`;
       const updated = new Map();
       persistence.update = async (d, v) => updated.set(d, v);
 
       assert.equal(0, updated.size, 'Precondition');
-      await persistence.bindState(docName, testYDoc, mockConn, 0, 0);
+      await persistence.bindState(docName, testYDoc, mockConn, mockStorage);
 
       assert.equal(testYDoc.getMap('aem').get('initial'),
-        'Get: http://lalala.com/ha/ha/ha.html-myauth');
+        'Get: http://lalala.com/ha/ha/ha.html-myauth-daadmin');
     } finally {
       persistence.get = savedGet;
       persistence.update = savedUpd;
     }
   })
+
+  it('Test bindstate read from worker storage', async () => {
+    const docName = 'https://admin.da.live/source/foo/bar.html';
+
+    // Prepare the (mocked) storage
+    const testDoc = new Y.Doc();
+    testDoc.getMap('foo').set('someattr', 'somevalue');
+    const storedYDoc = Y.encodeStateAsUpdate(testDoc);
+    const stored = new Map();
+    stored.set('docstore', storedYDoc);
+
+    // Create a new YDoc which will be initialised from storage
+    const ydoc = new Y.Doc();
+    const conn = {};
+    const storage = { list: async () => stored };
+
+    const savedGet = persistence.get;
+    try {
+      persistence.get = async (nm, au) => `Get: ${nm}-${au}`;
+
+      await persistence.bindState(docName, ydoc, conn, storage);
+
+      assert.equal('somevalue', ydoc.getMap('foo').get('someattr'));
+    } finally {
+      persistence.get = savedGet;
+    }
+  });
+
+  it('test persistence update on storage update', async () => {
+    const mockdebounce = (f) => async () => await f();
+    const pss = await esmock(
+      '../src/shareddoc.js', {
+        'lodash/debounce.js': {
+          default: mockdebounce
+        }
+      });
+
+    const docName = 'https://admin.da.live/source/foo/bar.html';
+    const storage = { list: async () => new Map() };
+    const updObservers = [];
+    const ydoc = new Y.Doc();
+    ydoc.getMap('aem').set('content', 'newcontent');
+    ydoc.on = (ev, fun) => {
+      if (ev === 'update') {
+        updObservers.push(fun);
+      }
+    };
+
+    const savedGet = pss.persistence.get;
+    const savedPut = pss.persistence.put;
+    try {
+      pss.persistence.get = async () => 'oldcontent';
+      const putCalls = []
+      pss.persistence.put = async (yd, c) => {
+        if (yd === ydoc && c === 'newcontent') {
+          putCalls.push('done');
+          return { ok: true, status: 200 };
+        }
+      };
+
+      await pss.persistence.bindState(docName, ydoc, {}, storage);
+      assert.equal(2, updObservers.length);
+      await updObservers[0]();
+      await updObservers[1]();
+      assert.deepStrictEqual(['done'], putCalls);
+    } finally {
+      pss.persistence.get = savedGet;
+      pss.persistence.put = savedPut;
+    }
+  });
+
+  it('test persist state in worker storage on update', async () => {
+    const docName = 'https://admin.da.live/source/foo/bar.html';
+
+    const updObservers = [];
+    const ydoc = new Y.Doc();
+    // mock out the 'on' function on the ydoc
+    ydoc.on = (ev, fun) => {
+      if (ev === 'update') {
+        updObservers.push(fun);
+      }
+    };
+
+    const conn = {};
+    const called = [];
+    const storage = {
+      deleteAll: async () => called.push('deleteAll'),
+      list: async () => new Map(),
+      put: async (obj) => called.push(obj)
+    };
+
+    const savedGet = persistence.get;
+    try {
+      persistence.get = async () => 'myinitial';
+
+      await persistence.bindState(docName, ydoc, conn, storage);
+      assert.equal('myinitial', ydoc.getMap('aem').get('initial'));
+      assert.equal(2, updObservers.length);
+
+      ydoc.getMap('aem').set('a', 'bcd');
+      await updObservers[0]();
+      await updObservers[1]();
+
+      // give the async methods a change to finish
+      await wait(100);
+
+      // check that it was stored
+      assert.equal(2, called.length);
+      assert.equal('deleteAll', called[0]);
+
+      const ydoc2 = new Y.Doc();
+      Y.applyUpdate(ydoc2, called[1].docstore);
+
+      assert.equal('bcd', ydoc2.getMap('aem').get('a'));
+      assert.equal('myinitial', ydoc2.getMap('aem').get('initial'));
+    } finally {
+      persistence.get = savedGet;
+    }
+  });
 
   it('Test getYDoc', async () => {
     const savedBS = persistence.bindState;
@@ -464,7 +593,7 @@ describe('Collab Test Suite', () => {
       const mockConn = {};
 
       assert.equal(0, bsCalls.length, 'Precondition');
-      const doc = await getYDoc(docName, mockConn, {});
+      const doc = await getYDoc(docName, mockConn, {}, {});
       assert.equal(1, bsCalls.length);
       assert.equal(bsCalls[0].dn, docName);
       assert.equal(bsCalls[0].d, doc);
@@ -472,7 +601,7 @@ describe('Collab Test Suite', () => {
 
       const daadmin = { foo: 'bar' }
       const env = { daadmin };
-      const doc2 = await getYDoc(docName, mockConn, env);
+      const doc2 = await getYDoc(docName, mockConn, env, {});
       assert.equal(1, bsCalls.length, 'Should not have called bindstate again');
       assert.equal(doc, doc2);
       assert.equal('bar', doc.daadmin.foo, 'Should have bound daadmin now');
@@ -538,7 +667,7 @@ describe('Collab Test Suite', () => {
 
     try {
       const bindCalls = [];
-      persistence.bindState = async (nm, d, c) => bindCalls.push({nm, d, c});
+      persistence.bindState = async (nm, d, c, s) => bindCalls.push({nm, d, c, s});
 
       const docName = 'https://somewhere.com/somedoc.html';
       const eventListeners = new Map();
@@ -552,10 +681,11 @@ describe('Collab Test Suite', () => {
 
       const daadmin = { a: 'b' };
       const env = { daadmin };
+      const storage = { foo: 'bar' };
 
       assert.equal(0, bindCalls.length, 'Precondition');
       assert.equal(0, eventListeners.size, 'Precondition');
-      await setupWSConnection(mockConn, docName, env);
+      await setupWSConnection(mockConn, docName, env, storage);
 
       assert.equal('arraybuffer', mockConn.binaryType);
       assert.equal(1, bindCalls.length);
@@ -563,6 +693,7 @@ describe('Collab Test Suite', () => {
       assert.equal(docName, bindCalls[0].d.name);
       assert.equal('b', bindCalls[0].d.daadmin.a);
       assert.equal(mockConn, bindCalls[0].c);
+      assert.deepStrictEqual(storage, bindCalls[0].s)
 
       const closeLsnr = eventListeners.get('close');
       assert(closeLsnr);
@@ -581,7 +712,7 @@ describe('Collab Test Suite', () => {
     const savedBind = persistence.bindState;
 
     try {
-      persistence.bindState = async (nm, d, c) => {};
+      persistence.bindState = async (nm, d, c, s) => {};
 
       const docName = 'https://somewhere.com/myotherdoc.html';
       const closeCalls = [];
@@ -606,7 +737,7 @@ describe('Collab Test Suite', () => {
       const docAEMMap = new Map();
       docAEMMap.set('content', 'something');
 
-      const ydoc = await getYDoc(docName, mockConn, {}, true);
+      const ydoc = await getYDoc(docName, mockConn, {}, {}, true);
       ydoc.awareness = awareness;
       ydoc.getMap = (n) => {
         if (n === 'aem') {
@@ -614,7 +745,7 @@ describe('Collab Test Suite', () => {
         }
       }
 
-      await setupWSConnection(mockConn, docName, {});
+      await setupWSConnection(mockConn, docName, {}, {});
 
       assert.equal(0, closeCalls.length);
       assert.equal(2, sendCalls.length);
@@ -713,7 +844,7 @@ describe('Collab Test Suite', () => {
 
         assert.equal(0, calls.length, 'Precondition');
         assert(!mockDoc.boundState, 'Precondition');
-        const pr = getBindPromise(docName, mockDoc, mockConn, undefined, mockWait);
+        const pr = getBindPromise(docName, mockDoc, mockConn, undefined, {}, mockWait);
         await pr;
         console.log('Calls', calls);
         assert.deepStrictEqual(['bindState'], calls);
@@ -743,11 +874,11 @@ describe('Collab Test Suite', () => {
 
         assert.equal(0, calls.length, 'Precondition');
         assert(!mockDoc.boundState, 'Precondition');
-        const pr = getBindPromise(docName, mockDoc, {}, undefined, mockWait);
+        const pr = getBindPromise(docName, mockDoc, {}, undefined, {}, mockWait);
 
         // Make a second request
         assert(!mockDoc.boundState, 'Should not yet have the state bound as promise is not yet resolved');
-        const pr2 = getBindPromise(docName, mockDoc, {}, pr, mockWait);
+        const pr2 = getBindPromise(docName, mockDoc, {}, pr, {}, mockWait);
 
         await pr;
         await pr2;
@@ -765,7 +896,7 @@ describe('Collab Test Suite', () => {
             return docMap;
           }
         }
-        const pr3 = getBindPromise(docName, mockDoc, {}, pr2, mockWait);
+        const pr3 = getBindPromise(docName, mockDoc, {}, pr2, {}, mockWait);
         await pr3;
 
         assert.equal(3, calls.length);
@@ -778,7 +909,7 @@ describe('Collab Test Suite', () => {
         // Make a 4th request, now with the content in the doc map
         docMap.set('content', 'some content');
         const callsClone = [...calls];
-        await getBindPromise(docName, mockDoc, {}, pr3, mockWait);
+        await getBindPromise(docName, mockDoc, {}, pr3, {}, mockWait);
         assert.deepStrictEqual(calls, callsClone, 'Should not be any more calls made, as the content is there');
       } finally {
         persistence.bindState = savedBS;

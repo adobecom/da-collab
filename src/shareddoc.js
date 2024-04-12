@@ -16,7 +16,6 @@ import * as awarenessProtocol from 'y-protocols/awareness.js';
 import * as encoding from 'lib0/encoding.js';
 import * as decoding from 'lib0/decoding.js';
 import debounce from 'lodash/debounce.js';
-import { uint8Array } from 'lib0/prng.js';
 
 const wsReadyStateConnecting = 0;
 const wsReadyStateOpen = 1;
@@ -83,6 +82,11 @@ export const storeState = async (state, storage, chunkSize = MAX_STORAGE_VALUE_S
     for (let i = 0; i < state.length; i += chunkSize, j += 1) {
       serialized[`chunk_${j}`] = state.slice(i, i + chunkSize);
     }
+
+    if (j >= MAX_STORAGE_KEYS) {
+      throw new Error('Object too big for worker storage');
+    }
+
     serialized.chunks = j;
   }
 
@@ -182,7 +186,7 @@ export const persistence = {
 
     let current = await persistence.get(docName, conn.auth, ydoc.daadmin);
     const stored = await readState(storage);
-    if (stored) {
+    if (stored && stored.length > 0) {
       Y.applyUpdate(ydoc, stored);
     } else {
       aemMap.set('initial', current);
@@ -192,13 +196,12 @@ export const persistence = {
 
     ydoc.on('update', () => {
       storeState(Y.encodeStateAsUpdate(ydoc), storage);
-      debounce(async () => {
-        current = await persistence.update(ydoc, current);
-      }, 2000, 10000);
     });
+    ydoc.on('update', debounce(async () => {
+      current = await persistence.update(ydoc, current);
+    }, 2000, 10000));
   },
 };
-
 
 export const updateHandler = (update, _origin, doc) => {
   const encoder = encoding.createEncoder();
@@ -267,7 +270,13 @@ export function wait(milliseconds) {
    is returned, but that one is already resolved so it's available immediately.
  */
 export const getBindPromise = async (
-  docName, doc, conn, existingPromise, storage, fnWait = wait) => {
+  docName,
+  doc,
+  conn,
+  existingPromise,
+  storage,
+  fnWait = wait,
+) => {
   if (existingPromise) {
     const hasContent = doc.getMap('aem')?.has('content');
     if (doc.boundState && hasContent) {
