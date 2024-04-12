@@ -14,7 +14,7 @@ import assert from 'assert';
 
 import {
   closeConn, getBindPromise, getYDoc, invalidateFromAdmin, messageListener, persistence,
-  setupWSConnection, setYDoc, updateHandler, WSSharedDoc,
+  readState, setupWSConnection, setYDoc, storeState, updateHandler, WSSharedDoc,
 } from '../src/shareddoc.js';
 
 function isSubArray(full, sub) {
@@ -785,4 +785,61 @@ describe('Collab Test Suite', () => {
       }
     });
 
+  it('readState not chunked', async () => {
+    const stored = new Map();
+    stored.set('docstore', new Uint8Array([254, 255]));
+    stored.set('chunks', 17); // should be ignored
+
+    const storage = { list: async () => stored };
+
+    const data = await readState(storage);
+    assert.deepStrictEqual(new Uint8Array([254, 255]), data);
+  });
+
+  it('readState chunked', async () => {
+    const stored = new Map();
+    stored.set('chunk_0', new Uint8Array([1, 2, 3]));
+    stored.set('chunk_1', new Uint8Array([4, 5]));
+    stored.set('chunks', 2);
+
+    const storage = { list: async () => stored };
+
+    const data = await readState(storage);
+    assert.deepStrictEqual(new Uint8Array([1, 2, 3, 4, 5]), data);
+  })
+
+  it('storeState not chunked', async () => {
+    const state = new Uint8Array([1, 2, 3, 4, 5]);
+
+    const called = [];
+    const storage = {
+      deleteAll: async () => called.push('deleteAll'),
+      put: (obj) => called.push(obj)
+    };
+
+    await storeState(state, storage, 10);
+
+    assert.equal(2, called.length);
+    assert.equal('deleteAll', called[0]);
+    assert.deepStrictEqual(state, called[1].docstore);
+  });
+
+  it('storeState chunked', async () => {
+    const state = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+
+    const called = [];
+    const storage = {
+      deleteAll: async () => called.push('deleteAll'),
+      put: (obj) => called.push(obj)
+    };
+
+    await storeState(state, storage, 4);
+
+    assert.equal(2, called.length);
+    assert.equal('deleteAll', called[0]);
+    assert.equal(3, called[1].chunks);
+    assert.deepStrictEqual(new Uint8Array([1, 2, 3, 4]), called[1].chunk_0);
+    assert.deepStrictEqual(new Uint8Array([5, 6, 7, 8]), called[1].chunk_1);
+    assert.deepStrictEqual(new Uint8Array([9]), called[1].chunk_2);
+  });
 });

@@ -16,6 +16,7 @@ import * as awarenessProtocol from 'y-protocols/awareness.js';
 import * as encoding from 'lib0/encoding.js';
 import * as decoding from 'lib0/decoding.js';
 import debounce from 'lodash/debounce.js';
+import { uint8Array } from 'lib0/prng.js';
 
 const wsReadyStateConnecting = 0;
 const wsReadyStateOpen = 1;
@@ -27,6 +28,8 @@ const docs = new Map();
 
 const messageSync = 0;
 const messageAwareness = 1;
+const MAX_STORAGE_KEYS = 128;
+const MAX_STORAGE_VALUE_SIZE = 131072;
 
 export const closeConn = (doc, conn) => {
   if (doc.conns.has(conn)) {
@@ -51,6 +54,39 @@ const send = (doc, conn, m) => {
   } catch (e) {
     closeConn(doc, conn);
   }
+};
+
+export const readState = async (storage) => {
+  const stored = await storage.list();
+
+  if (stored.has('docstore')) {
+    return stored.get('docstore');
+  }
+
+  const data = [];
+  for (let i = 0; i < stored.get('chunks'); i += 1) {
+    const chunk = stored.get(`chunk_${i}`);
+    data.push(...chunk);
+  }
+  return new Uint8Array(data);
+};
+
+export const storeState = async (state, storage, chunkSize = MAX_STORAGE_VALUE_SIZE) => {
+  await storage.deleteAll();
+
+  let serialized;
+  if (state.byteLength < chunkSize) {
+    serialized = { docstore: state };
+  } else {
+    serialized = {};
+    let j = 0;
+    for (let i = 0; i < state.length; i += chunkSize, j += 1) {
+      serialized[`chunk_${j}`] = state.slice(i, i + chunkSize);
+    }
+    serialized.chunks = j;
+  }
+
+  storage.put(serialized);
 };
 
 export const persistence = {
@@ -145,7 +181,7 @@ export const persistence = {
     const aemMap = persistedYdoc.getMap('aem');
 
     let current = await persistence.get(docName, conn.auth, ydoc.daadmin);
-    const stored = await storage.get('docstore');
+    const stored = await readState(storage);
     if (stored) {
       Y.applyUpdate(ydoc, stored);
     } else {
@@ -155,14 +191,14 @@ export const persistence = {
     }
 
     ydoc.on('update', () => {
-      const state = Y.encodeStateAsUpdate(ydoc);
-      storage.put('docstore', state);
+      storeState(Y.encodeStateAsUpdate(ydoc), storage);
       debounce(async () => {
         current = await persistence.update(ydoc, current);
       }, 2000, 10000);
     });
   },
 };
+
 
 export const updateHandler = (update, _origin, doc) => {
   const encoder = encoding.createEncoder();
