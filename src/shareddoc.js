@@ -90,7 +90,7 @@ export const storeState = async (state, storage, chunkSize = MAX_STORAGE_VALUE_S
     serialized.chunks = j;
   }
 
-  storage.put(serialized);
+  await storage.put(serialized);
 };
 
 export const persistence = {
@@ -184,11 +184,20 @@ export const persistence = {
     const persistedYdoc = new Y.Doc();
     const aemMap = persistedYdoc.getMap('aem');
 
+    let restored = false;
+    try {
+      const stored = await readState(storage);
+      if (stored && stored.length > 0) {
+        Y.applyUpdate(ydoc, stored);
+        restored = true;
+      }
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.log('Problem restoring state from worker storage', error);
+    }
+
     let current = await persistence.get(docName, conn.auth, ydoc.daadmin);
-    const stored = await readState(storage);
-    if (stored && stored.length > 0) {
-      Y.applyUpdate(ydoc, stored);
-    } else {
+    if (!restored) {
       aemMap.set('initial', current);
 
       Y.applyUpdate(ydoc, Y.encodeStateAsUpdate(persistedYdoc));

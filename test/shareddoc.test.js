@@ -488,6 +488,23 @@ describe('Collab Test Suite', () => {
     }
   });
 
+  it('Test bindstate falls back to daadmin on worker storage error', async () => {
+    const docName = 'https://admin.da.live/source/foo/bar.html';
+    const ydoc = new Y.Doc();
+    const storage = { list: async () => { throw new Error('yikes') } };
+
+    const savedGet = persistence.get;
+    try {
+      persistence.get = async () => 'From daadmin';
+
+      await persistence.bindState(docName, ydoc, {}, storage);
+
+      assert.equal('From daadmin', ydoc.getMap('aem').get('initial'));
+    } finally {
+      persistence.get = savedGet;
+    }
+  });
+
   it('test persistence update on storage update', async () => {
     const mockdebounce = (f) => async () => await f();
     const pss = await esmock(
