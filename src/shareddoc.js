@@ -151,6 +151,9 @@ export const persistence = {
     if (svrContent !== cliContent) {
       // Only update the client if they're different
       aemMap.set('svrinv', svrContent);
+      if (persistence.storage) {
+        await persistence.storage.deleteAll();
+      }
     }
   },
   update: async (ydoc, current) => {
@@ -181,6 +184,7 @@ export const persistence = {
     return current;
   },
   bindState: async (docName, ydoc, conn, storage) => {
+    persistence.storage = storage;
     const persistedYdoc = new Y.Doc();
     const aemMap = persistedYdoc.getMap('aem');
 
@@ -203,9 +207,13 @@ export const persistence = {
       Y.applyUpdate(ydoc, Y.encodeStateAsUpdate(persistedYdoc));
     }
 
-    ydoc.on('update', () => {
-      storeState(Y.encodeStateAsUpdate(ydoc), storage);
-    });
+    setTimeout(() => {
+      ydoc.on('update', async () => {
+        if (!ydoc.getMap('aem').has('svrinv')) {
+          storeState(Y.encodeStateAsUpdate(ydoc), storage);
+        }
+      });
+    }, 15000); // start writing the state to the worker storage after 15 secs
     ydoc.on('update', debounce(async () => {
       current = await persistence.update(ydoc, current);
     }, 2000, 10000));
