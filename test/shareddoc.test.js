@@ -339,15 +339,21 @@ describe('Collab Test Suite', () => {
       return 'Svr content';
     };
 
+    const storageCalls = [];
+    const mockStorage = { deleteAll: async () => storageCalls.push('deleteAll') };
+
     const savedGet = persistence.get;
     try {
       persistence.get = mockGet;
+      persistence.storage = mockStorage;
       await persistence.invalidate(mockYDoc);
 
       assert.equal('Svr content', docMap.get('svrinv'));
       assert.equal(2, getCalls.length);
       assert.equal('http://foo.bar/0/123.html', getCalls[0]);
       assert.equal(['auth1,auth2'], getCalls[1]);
+
+      assert.deepStrictEqual(['deleteAll'], storageCalls);
     } finally {
       persistence.get = savedGet;
     }
@@ -455,6 +461,7 @@ describe('Collab Test Suite', () => {
 
       assert.equal(testYDoc.getMap('aem').get('initial'),
         'Get: http://lalala.com/ha/ha/ha.html-myauth-daadmin');
+      assert.equal(persistence.storage, mockStorage);
     } finally {
       persistence.get = savedGet;
       persistence.update = savedUpd;
@@ -525,9 +532,16 @@ describe('Collab Test Suite', () => {
       }
     };
 
+    const savedSetTimeout = globalThis.setTimeout;
     const savedGet = pss.persistence.get;
     const savedPut = pss.persistence.put;
     try {
+      globalThis.setTimeout = (f) => {
+        // Restore the global function
+        globalThis.setTimeout = savedSetTimeout;
+        f();
+      };
+
       pss.persistence.get = async () => 'oldcontent';
       const putCalls = []
       pss.persistence.put = async (yd, c) => {
@@ -543,6 +557,7 @@ describe('Collab Test Suite', () => {
       await updObservers[1]();
       assert.deepStrictEqual(['done'], putCalls);
     } finally {
+      globalThis.setTimeout = savedSetTimeout;
       pss.persistence.get = savedGet;
       pss.persistence.put = savedPut;
     }
@@ -568,8 +583,14 @@ describe('Collab Test Suite', () => {
       put: async (obj) => called.push(obj)
     };
 
+    const savedSetTimeout = globalThis.setTimeout;
     const savedGet = persistence.get;
     try {
+      globalThis.setTimeout = (f) => {
+        // Restore the global function
+        globalThis.setTimeout = savedSetTimeout;
+        f();
+      };
       persistence.get = async () => 'myinitial';
 
       await persistence.bindState(docName, ydoc, conn, storage);
@@ -593,6 +614,7 @@ describe('Collab Test Suite', () => {
       assert.equal('bcd', ydoc2.getMap('aem').get('a'));
       assert.equal('myinitial', ydoc2.getMap('aem').get('initial'));
     } finally {
+      globalThis.setTimeout = savedSetTimeout;
       persistence.get = savedGet;
     }
   });
