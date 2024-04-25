@@ -305,14 +305,24 @@ describe('Collab Test Suite', () => {
     mockYDoc.name = 'http://blah.di.blah/a/ha.html';
     setYDoc(mockYDoc.name, mockYDoc);
 
+    const stored = new Map();
+    stored.set('doc', 'http://foo.bar/123.html');
+
+    const storageCalled = []
+    const mockStorage = {
+      deleteAll: () => storageCalled.push('deleteAll'),
+      get: () => stored
+    }
+
     try {
       persistence.invalidate = mockInvalidate;
 
       assert.equal(0, calledWith.length, 'Precondition');
-      assert(!await invalidateFromAdmin('http://foo.bar/123.html'));
+      assert(!await invalidateFromAdmin('http://foo.bar/123.html', mockStorage));
       assert.equal(0, calledWith.length);
+      assert.deepStrictEqual(['deleteAll'], storageCalled);
 
-      assert(await invalidateFromAdmin('http://blah.di.blah/a/ha.html'));
+      assert(await invalidateFromAdmin('http://blah.di.blah/a/ha.html', mockStorage));
       assert.deepStrictEqual(['http://blah.di.blah/a/ha.html'], calledWith);
     } finally {
       persistence.invalidate = oldFun;
@@ -345,8 +355,7 @@ describe('Collab Test Suite', () => {
     const savedGet = persistence.get;
     try {
       persistence.get = mockGet;
-      persistence.storage = mockStorage;
-      await persistence.invalidate(mockYDoc);
+      await persistence.invalidate(mockYDoc, mockStorage);
 
       assert.equal('Svr content', docMap.get('svrinv'));
       assert.equal(2, getCalls.length);
@@ -461,7 +470,6 @@ describe('Collab Test Suite', () => {
 
       assert.equal(testYDoc.getMap('aem').get('initial'),
         'Get: http://lalala.com/ha/ha/ha.html-myauth-daadmin');
-      assert.equal(persistence.storage, mockStorage);
     } finally {
       persistence.get = savedGet;
       persistence.update = savedUpd;
@@ -477,6 +485,7 @@ describe('Collab Test Suite', () => {
     const storedYDoc = Y.encodeStateAsUpdate(testDoc);
     const stored = new Map();
     stored.set('docstore', storedYDoc);
+    stored.set('doc', docName);
 
     // Create a new YDoc which will be initialised from storage
     const ydoc = new Y.Doc();
@@ -956,14 +965,34 @@ describe('Collab Test Suite', () => {
     });
 
   it('readState not chunked', async () => {
+    const docName = 'http://foo.bar/doc123.html';
     const stored = new Map();
     stored.set('docstore', new Uint8Array([254, 255]));
     stored.set('chunks', 17); // should be ignored
+    stored.set('doc', docName);
 
     const storage = { list: async () => stored };
 
-    const data = await readState(storage);
+    const data = await readState(docName, storage);
     assert.deepStrictEqual(new Uint8Array([254, 255]), data);
+  });
+
+  it('readState doc mismatch', async () => {
+    const docName = 'http://foo.bar/doc123.html';
+    const stored = new Map();
+    stored.set('docstore', new Uint8Array([254, 255]));
+    stored.set('chunks', 17); // should be ignored
+    stored.set('doc', 'http://foo.bar/doc456.html');
+
+    const storageCalled = [];
+    const storage = {
+      list: async () => stored,
+      deleteAll: async () => storageCalled.push('deleteAll'),
+    };
+
+    const data = await readState(docName, storage);
+    assert.equal(data, undefined);
+    assert.deepStrictEqual(['deleteAll'], storageCalled);
   });
 
   it('readState chunked', async () => {
@@ -971,14 +1000,16 @@ describe('Collab Test Suite', () => {
     stored.set('chunk_0', new Uint8Array([1, 2, 3]));
     stored.set('chunk_1', new Uint8Array([4, 5]));
     stored.set('chunks', 2);
+    stored.set('doc', 'mydoc');
 
     const storage = { list: async () => stored };
 
-    const data = await readState(storage);
+    const data = await readState('mydoc', storage);
     assert.deepStrictEqual(new Uint8Array([1, 2, 3, 4, 5]), data);
   })
 
   it('storeState not chunked', async () => {
+    const docName = 'https://some.where/far/away.html';
     const state = new Uint8Array([1, 2, 3, 4, 5]);
 
     const called = [];
@@ -987,11 +1018,12 @@ describe('Collab Test Suite', () => {
       put: (obj) => called.push(obj)
     };
 
-    await storeState(state, storage, 10);
+    await storeState(docName, state, storage, 10);
 
     assert.equal(2, called.length);
     assert.equal('deleteAll', called[0]);
     assert.deepStrictEqual(state, called[1].docstore);
+    assert.equal(docName, called[1].doc);
   });
 
   it('storeState chunked', async () => {
@@ -1003,11 +1035,12 @@ describe('Collab Test Suite', () => {
       put: (obj) => called.push(obj)
     };
 
-    await storeState(state, storage, 4);
+    await storeState('somedoc', state, storage, 4);
 
     assert.equal(2, called.length);
     assert.equal('deleteAll', called[0]);
     assert.equal(3, called[1].chunks);
+    assert.equal('somedoc', called[1].doc);
     assert.deepStrictEqual(new Uint8Array([1, 2, 3, 4]), called[1].chunk_0);
     assert.deepStrictEqual(new Uint8Array([5, 6, 7, 8]), called[1].chunk_1);
     assert.deepStrictEqual(new Uint8Array([9]), called[1].chunk_2);

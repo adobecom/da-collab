@@ -55,8 +55,20 @@ const send = (doc, conn, m) => {
   }
 };
 
-export const readState = async (storage) => {
+export const readState = async (docName, storage) => {
   const stored = await storage.list();
+  if (stored.size === 0) {
+    // eslint-disable-next-line no-console
+    console.log('No stored doc in persistence');
+    return undefined;
+  }
+
+  if (stored.get('doc') !== docName) {
+    // eslint-disable-next-line no-console
+    console.log('Docname mismatch in persistence. Expected:', docName, 'found:', stored.get('doc'), 'Deleting storage');
+    await storage.deleteAll();
+    return undefined;
+  }
 
   if (stored.has('docstore')) {
     return stored.get('docstore');
@@ -70,7 +82,7 @@ export const readState = async (storage) => {
   return new Uint8Array(data);
 };
 
-export const storeState = async (state, storage, chunkSize = MAX_STORAGE_VALUE_SIZE) => {
+export const storeState = async (docName, state, storage, chunkSize = MAX_STORAGE_VALUE_SIZE) => {
   await storage.deleteAll();
 
   let serialized;
@@ -89,6 +101,7 @@ export const storeState = async (state, storage, chunkSize = MAX_STORAGE_VALUE_S
 
     serialized.chunks = j;
   }
+  serialized.doc = docName;
 
   await storage.put(serialized);
 };
@@ -140,7 +153,7 @@ export const persistence = {
       statusText,
     };
   },
-  invalidate: async (ydoc) => {
+  invalidate: async (ydoc, storage) => {
     const auth = Array.from(ydoc.conns.keys())
       .map((con) => con.auth);
     const authHeader = auth.length > 0 ? [...new Set(auth)].join(',') : undefined;
@@ -151,9 +164,7 @@ export const persistence = {
     if (svrContent !== cliContent) {
       // Only update the client if they're different
       aemMap.set('svrinv', svrContent);
-      if (persistence.storage) {
-        await persistence.storage.deleteAll();
-      }
+      await storage.deleteAll();
     }
   },
   update: async (ydoc, current) => {
@@ -184,16 +195,17 @@ export const persistence = {
     return current;
   },
   bindState: async (docName, ydoc, conn, storage) => {
-    persistence.storage = storage;
     const persistedYdoc = new Y.Doc();
     const aemMap = persistedYdoc.getMap('aem');
 
     let restored = false;
     try {
-      const stored = await readState(storage);
+      const stored = await readState(docName, storage);
       if (stored && stored.length > 0) {
         Y.applyUpdate(ydoc, stored);
         restored = true;
+        // eslint-disable-next-line no-console
+        console.log('Restored from worker persistence', docName);
       }
     } catch (error) {
       // eslint-disable-next-line no-console
@@ -210,7 +222,7 @@ export const persistence = {
     setTimeout(() => {
       ydoc.on('update', async () => {
         if (!ydoc.getMap('aem').has('svrinv')) {
-          storeState(Y.encodeStateAsUpdate(ydoc), storage);
+          storeState(docName, Y.encodeStateAsUpdate(ydoc), storage);
         }
       });
     }, 15000); // start writing the state to the worker storage after 15 secs
@@ -371,11 +383,41 @@ export const messageListener = (conn, doc, message) => {
   }
 };
 
-export const invalidateFromAdmin = async (docName) => {
+export const deleteFromAdmin = async (docName, storage) => {
   const ydoc = docs.get(docName);
   if (ydoc) {
-    await persistence.invalidate(ydoc);
+    // If we still have the ydoc, set it to be empty.
+    // Note that it needs to contain at least one character to be picked up
+    // so setting it to a space.
+    ydoc.getMap('aem').set('svrinv', ' ');
+  }
+
+  const keys = await storage.get(['docstore', 'chunks', 'doc']);
+  const storedDoc = keys.get('doc');
+  if (storedDoc && storedDoc !== docName) {
+    // eslint-disable-next-line no-console
+    console.log('Mismatch between requested and found doc. Requested', docName, 'found', keys.get('doc'));
+    return false;
+  }
+
+  // eslint-disable-next-line no-console
+  console.log(
+    'Deleting storage for',
+    docName,
+    'containing',
+    keys.has('docstore') ? 'docstore' : `keys=${keys.chunks}`,
+  );
+  await storage.deleteAll();
+  return true;
+};
+
+export const invalidateFromAdmin = async (docName, storage) => {
+  const ydoc = docs.get(docName);
+  if (ydoc) {
+    await persistence.invalidate(ydoc, storage);
     return true;
+  } else {
+    deleteFromAdmin(docName, storage);
   }
   return false;
 };
