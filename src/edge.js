@@ -9,7 +9,7 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-import { invalidateFromAdmin, setupWSConnection } from './shareddoc.js';
+import { deleteFromAdmin, invalidateFromAdmin, setupWSConnection } from './shareddoc.js';
 
 // This is the Edge Worker, built using Durable Objects!
 
@@ -42,7 +42,7 @@ export async function handleErrors(request, func) {
   }
 }
 
-async function syncAdmin(url, request, env) {
+async function adminAPI(api, url, request, env) {
   const doc = url.searchParams.get('doc');
   if (!doc) {
     return new Response('Bad', { status: 400 });
@@ -53,7 +53,7 @@ async function syncAdmin(url, request, env) {
   const id = env.rooms.idFromName(doc);
   const roomObject = env.rooms.get(id);
 
-  return roomObject.fetch(new URL(`${doc}?api=syncAdmin`));
+  return roomObject.fetch(new URL(`${doc}?api=${api}`));
 }
 
 function ping(env) {
@@ -72,7 +72,9 @@ async function handleApiCall(url, request, env) {
     case '/api/v1/ping':
       return ping(env);
     case '/api/v1/syncadmin':
-      return syncAdmin(url, request, env);
+      return adminAPI('syncAdmin', url, request, env);
+    case '/api/v1/deleteadmin':
+      return adminAPI('deleteAdmin', url, request, env);
     default:
       return new Response('Bad Request', { status: 400 });
   }
@@ -182,14 +184,20 @@ export class DocRoom {
     this.env = env;
   }
 
-  static async handleApiCall(url, request) {
+  async handleApiCall(url, request) {
     const qidx = request.url.indexOf('?');
     const baseURL = request.url.substring(0, qidx);
 
     const api = url.searchParams.get('api');
     switch (api) {
+      case 'deleteAdmin':
+        if (await deleteFromAdmin(baseURL, this.storage)) {
+          return new Response(null, { status: 204 });
+        } else {
+          return new Response('Not Found', { status: 404 });
+        }
       case 'syncAdmin':
-        if (await invalidateFromAdmin(baseURL)) {
+        if (await invalidateFromAdmin(baseURL, this.storage)) {
           return new Response('OK', { status: 200 });
         } else {
           return new Response('Not Found', { status: 404 });
@@ -215,7 +223,7 @@ export class DocRoom {
   async fetch(request, _opts, successCode = 101) {
     const url = new URL(request.url);
     if (url.search.startsWith('?api=')) {
-      return DocRoom.handleApiCall(url, request);
+      return this.handleApiCall(url, request);
     }
 
     if (request.headers.get('Upgrade') !== 'websocket') {

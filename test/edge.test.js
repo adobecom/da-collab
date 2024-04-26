@@ -25,6 +25,34 @@ function hash(str) {
 }
 
 describe('Worker test suite', () => {
+  it('Test deleteAdmin', async () => {
+    const expectedHash = hash('https://some.where/some/doc.html');
+    const req = {
+      url: 'http://localhost:9999/api/v1/deleteadmin?doc=https://some.where/some/doc.html'
+    };
+
+    const roomFetchCalls = []
+    const room = {
+      fetch(url) {
+        roomFetchCalls.push(url.toString());
+        return new Response(null, { status: 200 });
+      }
+    };
+    const rooms = {
+      idFromName(nm) { return hash(nm) },
+      get(id) {
+        if (id === expectedHash) {
+          return room;
+        }
+      }
+    }
+    const env = { rooms };
+
+    const resp = await handleApiRequest(req, env);
+    assert.equal(200, resp.status);
+    assert.deepStrictEqual(roomFetchCalls, ['https://some.where/some/doc.html?api=deleteAdmin'])
+  });
+
   it('Test syncAdmin request without doc', async () => {
     const req = {
       url: 'http://localhost:12345/api/v1/syncadmin'
@@ -105,6 +133,51 @@ describe('Worker test suite', () => {
     assert.equal('Bad Request', await resp.text());
   });
 
+  it('Docroom deleteFromAdmin', async () => {
+    const aemMap = new Map();
+    const ydocName = 'http://foobar.com/q.html';
+    const mockYdoc = {
+      getMap(name) { return name === 'aem' ? aemMap : null; }
+    };
+    setYDoc(ydocName, mockYdoc);
+
+    const req = {
+      url: `${ydocName}?api=deleteAdmin`
+    };
+
+    const storageMap = new Map();
+    storageMap.set('docstore', 'mystore');
+    storageMap.set('doc', ydocName);
+    const storageCalled = [];
+    const mockStorage = {
+      deleteAll: () => storageCalled.push('deleteAll'),
+      get: (fields) => {
+        if (['docstore', 'chunks', 'doc'].every((v,i)=> v === fields[i])) {
+          return storageMap;
+        }
+      }
+    };
+    const dr = new DocRoom({ storage: mockStorage }, null);
+
+    const resp = await dr.fetch(req)
+    assert.equal(204, resp.status);
+    assert.deepStrictEqual(['deleteAll'], storageCalled);
+    assert.equal(' ', aemMap.get('svrinv'));
+  });
+
+  it('Docroom deleteFromAdmin not found', async () => {
+    const req = {
+      url: `https://blah.blah/blah.html?api=deleteAdmin`
+    };
+
+    const storedMap = new Map();
+    storedMap.set('doc', 'anotherdoc');
+    const mockStorage = { get: () => storedMap };
+    const dr = new DocRoom({ storage: mockStorage }, null);
+    const resp = await dr.fetch(req)
+    assert.equal(404, resp.status);
+  });
+
   it('Docroom syncFromAdmin', async () => {
     const aemMap = new Map();
     const ydocName = 'http://foobar.com/a/b/c.html';
@@ -119,7 +192,9 @@ describe('Worker test suite', () => {
       url: `${ydocName}?api=syncAdmin`
     };
 
-    const dr = new DocRoom({ storage: null }, null);
+    const storageCalled = [];
+    const mockStorage = { deleteAll: () => storageCalled.push('deleteAll') };
+    const dr = new DocRoom({ storage: mockStorage }, null);
 
     const mockFetch = async (url) => {
       if (url === ydocName) {
@@ -136,6 +211,7 @@ describe('Worker test suite', () => {
 
       assert.equal(200, resp.status);
       assert.equal('Document content', aemMap.get('svrinv'));
+      assert.deepStrictEqual(['deleteAll'], storageCalled);
     } finally {
       persistence.fetch = oldPFectch;
     }
