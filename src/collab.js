@@ -57,7 +57,7 @@ function getSchema() {
   return new Schema({ nodes, marks: customMarks });
 }
 
-export async function aem2doc(html, ydoc, rewriter = new HTMLRewriter()) {
+export async function aem2prose(html, schema, rewriter = new HTMLRewriter()) {
   const json = { type: 'doc', content: [] };
   let current = json;
   let currentText;
@@ -70,9 +70,40 @@ export async function aem2doc(html, ydoc, rewriter = new HTMLRewriter()) {
     }
 
     element(element) {
+      if (this.mark) {
+        if (currentText) {
+          current.content.push({ type: 'text', text: currentText, marks });
+          currentText = undefined;
+        }
+
+        const parent = marks;
+        currentText = undefined;
+        marks = Array.from(marks);
+        const currentMark = { type: this.node.name, attrs: {} };
+        Object.entries(this.node.attrs).forEach(([name, value]) => {
+          const attrs = {};
+          for (const [attrName, attrValue] of element.attributes) {
+            attrs[attrName] = attrValue;
+          }
+          if (attrs[name]) {
+            currentMark.attrs[name] = attrs[name];
+          } else if (value.hasDefault) {
+            currentMark.attrs[name] = value.default;
+          }
+        });
+        marks.push(currentMark);
+        element.onEndTag(() => {
+          if (currentText) {
+            current.content.push({ type: 'text', text: currentText, marks });
+            currentText = undefined;
+          }
+          marks = parent;
+        });
+        return;
+      }
       const parent = current;
       current = {
-        type: this.node.name, content: [], attrs: {}, marks: [],
+        type: this.node.name, content: [], attrs: {}, marks: Array.from(marks),
       };
       Object.entries(this.node.attrs).forEach(([name, value]) => {
         const attrs = {};
@@ -85,23 +116,20 @@ export async function aem2doc(html, ydoc, rewriter = new HTMLRewriter()) {
           current.attrs[name] = value.default;
         }
       });
-      if (this.mark) {
-        marks.push(current);
-        current = parent;
-      } else {
-        parent.content.push(current);
+      if (currentText) {
+        parent.content.push({ type: 'text', text: currentText, marks });
+        currentText = undefined;
       }
-      if (this.node.isBlock || this.mark) {
+      parent.content.push(current);
+      if (this.node.isBlock) {
         element.onEndTag(() => {
           if (currentText) {
             current.content.push({ type: 'text', text: currentText, marks });
             currentText = undefined;
           }
           marks = [];
-          if (!this.mark) current = parent;
         });
       } else {
-        currentText = undefined;
         current = parent;
         marks = [];
       }
@@ -112,7 +140,6 @@ export async function aem2doc(html, ydoc, rewriter = new HTMLRewriter()) {
     }
   }
 
-  const schema = getSchema();
   Object.values(schema.nodes).filter((node) => node.spec.parseDOM).forEach((node) => {
     node.spec.parseDOM.forEach((rule) => {
       rewriter.on(rule.tag, new NodeHandler(rule, node));
@@ -125,17 +152,27 @@ export async function aem2doc(html, ydoc, rewriter = new HTMLRewriter()) {
   });
   const resp = await rewriter.transform(new Response(html));
   await resp.text();
+  return json;
+}
+
+export async function aem2doc(html, ydoc, rewriter = new HTMLRewriter()) {
+  const schema = getSchema();
+  const json = await aem2prose(html, schema, rewriter);
   prosemirrorJSONToYXmlFragment(schema, json, ydoc.getXmlFragment('prosemirror'));
 }
 
-export function doc2aem(ydoc) {
-  const json = yDocToProsemirrorJSON(ydoc);
+export function prose2aem(json, schema) {
   const html = `
 <body>
   <header></header>
-  <main>${node2html(json, getSchema())}</main>
+  <main>${node2html(json, schema)}</main>
   <footer></footer>
 </body>
 `;
   return html;
+}
+export function doc2aem(ydoc) {
+  const json = yDocToProsemirrorJSON(ydoc);
+  const schema = getSchema();
+  return prose2aem(json, schema);
 }
