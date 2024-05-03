@@ -23,7 +23,7 @@ describe('collab test suite', () => {
 </body>
 `;
       const yDoc = new Y.Doc();
-      await aem2doc(html, yDoc);
+      aem2doc(html, yDoc);
       const result = doc2aem(yDoc);
       assert.equal(result, html);
     });
@@ -36,7 +36,7 @@ describe('collab test suite', () => {
 </body>
 `;
       const yDoc = new Y.Doc();
-      await aem2doc(html, yDoc);
+      aem2doc(html, yDoc);
       const result = doc2aem(yDoc);
       assert.equal(result, html);
     });
@@ -49,7 +49,7 @@ describe('collab test suite', () => {
 </body>
 `;
       const yDoc = new Y.Doc();
-      await aem2doc(html, yDoc);
+      aem2doc(html, yDoc);
       const result = doc2aem(yDoc);
       assert.equal(result, html);
     });
@@ -63,7 +63,7 @@ describe('collab test suite', () => {
 </body>
 `;
     const yDoc = new Y.Doc();
-    await aem2doc(html, yDoc);
+    aem2doc(html, yDoc);
     const result = doc2aem(yDoc);
     assert.equal(result, html);
   });
@@ -77,7 +77,7 @@ describe('collab test suite', () => {
 </body>
 `;
   const yDoc = new Y.Doc();
-  await aem2doc(html, yDoc);
+  aem2doc(html, yDoc);
   const result = doc2aem(yDoc);
   assert.equal(result, html);
 });
@@ -90,7 +90,7 @@ it('Test simple block roundtrip', async () => {
 </body>
 `;
 const yDoc = new Y.Doc();
-await aem2doc(html, yDoc);
+aem2doc(html, yDoc);
 const result = doc2aem(yDoc);
 assert.equal(result, html);
 });

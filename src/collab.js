@@ -32,7 +32,7 @@ function getSchema() {
   return new Schema({ nodes, marks: customMarks });
 }
 
-export async function aem2doc(html, ydoc) {
+export function aem2doc(html, ydoc) {
   const tree = fromHtml(html, { fragment: true });
   const main = tree.children.find((child) => child.tagName === 'main');
   (main?.children || []).forEach((parent) => {
@@ -93,26 +93,6 @@ export async function aem2doc(html, ydoc) {
         // eslint-disable-next-line no-param-reassign
         parent.children = children;
       }
-    }
-  });
-  const { children } = main;
-  fragment.children = [];
-  children.forEach((child) => {
-    if (child.type === 'table') {
-      const rows = child.children[0].children;
-      const nameRow = rows.shift();
-      const className = toBlockCSSClassNames(nameRow.children[0].children[0].children[0].text).join(' ');
-      const block = { type: 'div', attributes: { class: className }, children: [] };
-      fragment.children.push(block);
-      rows.forEach((row) => {
-        const div = { type: 'div', attributes: {}, children: [] };
-        block.children.push(div);
-        row.children.forEach((col) => {
-          div.children.push({ type: 'div', attributes: {}, children: col.children });
-        });
-      });
-    } else {
-      fragment.children.push(child);
     }
   });
   // convert section breaks
