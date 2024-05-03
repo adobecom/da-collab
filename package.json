@@ -25,12 +25,14 @@
     "mocha": "^10.2.0",
     "mocha-junit-reporter": "^2.2.1",
     "mocha-multi-reporters": "^1.5.1",
-    "wrangler": "^3.22.4",
-    "@worker-tools/html-rewriter": "^0.1.0-pre.19"
+    "wrangler": "^3.22.4"
   },
   "dependencies": {
     "lib0": "^0.2.52",
+    "hast-util-from-html": "^2.0.1",
+    "hast-util-select": "^6.0.2",
     "lodash": "^4.17.21",
+    "prosemirror-model": "^1.19.0",
     "prosemirror-schema-basic": "^1.2.1",
     "prosemirror-schema-list": "^1.3.0",
     "prosemirror-state": "^1.4.2",
