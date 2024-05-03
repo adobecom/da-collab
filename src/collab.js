@@ -75,16 +75,16 @@ export function aem2doc(html, ydoc) {
           };
 
           const td = {
-            type: 'element', tagName: 'td', children: [{ type: 'text', value: name }], properties: { colspan: maxCols },
+            type: 'element', tagName: 'td', children: [{ type: 'text', value: blockName }], properties: { colspan: maxCols },
           };
 
           headerRow.children.push(td);
           table.children.push(headerRow);
-          rows.forEach((row) => {
+          rows.filter((row) => row.tagName === 'div').forEach((row) => {
             const tr = {
               type: 'element', tagName: 'tr', children: [], properties: {},
             };
-            const cells = row.children ? [...row.children] : [row];
+            const cells = (row.children ? [...row.children] : [row]).filter((cell) => cell.type !== 'text' || (cell.value && cell.value.trim() !== '\n' && cell.value.trim() !== ''));
             cells.forEach((cell, idx) => {
               const tdi = {
                 type: 'element', tagName: 'td', children: [], properties: {},
@@ -111,19 +111,25 @@ export function aem2doc(html, ydoc) {
     }
   });
   convertSectionBreak(main);
-  main.children = main.children.flatMap((node, i) => {
+  let count = 0;
+  main.children = main.children.flatMap((node) => {
     const result = [];
-    if (node.tagName === 'div' && i > 0) {
-      result.push({
-        type: 'element', tagName: 'p', children: [], properties: {},
-      });
-      result.push({
-        type: 'element', tagName: 'hr', children: [], properties: {},
-      });
-      result.push({
-        type: 'element', tagName: 'p', children: [], properties: {},
-      });
-      result.push(...node.children);
+    if (node.tagName === 'div') {
+      if (count > 0) {
+        result.push({
+          type: 'element', tagName: 'p', children: [], properties: {},
+        });
+        result.push({
+          type: 'element', tagName: 'hr', children: [], properties: {},
+        });
+        result.push({
+          type: 'element', tagName: 'p', children: [], properties: {},
+        });
+        result.push(...node.children);
+      } else {
+        result.push(node);
+      }
+      count += 1;
     } else {
       result.push(node);
     }
@@ -195,10 +201,11 @@ function tohtml(node) {
     if (node.type === 'img' && !node.attributes.loading) {
       attributes += ' loading="lazy"';
     }
-    const result = `<${node.type}${attributes}>`;
     if (node.type === 'img') {
-      return `<picture><source srcset="${node.attributes.src}"><source srcset="${node.attributes.src}" media="(min-width: 600px)">${result}</picture>`;
+      return `<picture><source srcset="${node.attributes.src}"><source srcset="${node.attributes.src}" media="(min-width: 600px)"><${node.type}${attributes}></picture>`;
     }
+
+    const result = node.type !== 'br' ? `<${node.type}${attributes}></${node.type}>` : `<${node.type}>`;
 
     return result;
   }
