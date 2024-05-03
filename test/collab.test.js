@@ -85,7 +85,7 @@ it('Test simple block roundtrip', async () => {
   const html = `
 <body>
   <header></header>
-  <main><div><div class="foo"><div><h1>bar</h1></div><div><h2>bar2</h2></div></div></div></main>
+  <main><div><div class="foo"><div><div><h1>bar</h1></div><div><h2>bar2</h2></div></div></div></div></main>
   <footer></footer>
 </body>
 `;

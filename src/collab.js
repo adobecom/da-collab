@@ -95,6 +95,26 @@ export async function aem2doc(html, ydoc) {
       }
     }
   });
+  const { children } = main;
+  fragment.children = [];
+  children.forEach((child) => {
+    if (child.type === 'table') {
+      const rows = child.children[0].children;
+      const nameRow = rows.shift();
+      const className = toBlockCSSClassNames(nameRow.children[0].children[0].children[0].text).join(' ');
+      const block = { type: 'div', attributes: { class: className }, children: [] };
+      fragment.children.push(block);
+      rows.forEach((row) => {
+        const div = { type: 'div', attributes: {}, children: [] };
+        block.children.push(div);
+        row.children.forEach((col) => {
+          div.children.push({ type: 'div', attributes: {}, children: col.children });
+        });
+      });
+    } else {
+      fragment.children.push(child);
+    }
+  });
   // convert section breaks
   // convert sections
   const handler2 = {
@@ -178,8 +198,35 @@ function tohtml(node) {
       }
     }
   }
+  if (node.type === 'p') {
+    if (children.length === 1) {
+      if (children[0].type === 'img') {
+        return children.map((child) => tohtml(child)).join('');
+      }
+    }
+  }
   return `<${node.type}${attributes}>${children.map((child) => tohtml(child)).join('')}</${node.type}>`;
 }
+
+function toBlockCSSClassNames(text) {
+  if (!text) return [];
+  const names = [];
+  const idx = text.lastIndexOf('(');
+  if (idx >= 0) {
+    names.push(text.substring(0, idx));
+    names.push(...text.substring(idx + 1).split(','));
+  } else {
+    names.push(text);
+  }
+
+  return names.map((name) => name
+    .toLowerCase()
+    .replace(/[^0-9a-z]+/g, '-')
+    .replace(/^-+/, '')
+    .replace(/-+$/, ''))
+    .filter((name) => !!name);
+}
+
 export function doc2aem(ydoc) {
   const schema = getSchema();
   const json = yDocToProsemirror(schema, ydoc);
@@ -213,6 +260,26 @@ export function doc2aem(ydoc) {
     .serializeFragment(json.content, { document: new Proxy({}, handler3) });
 
   // convert table to blocks
+  const { children } = fragment;
+  fragment.children = [];
+  children.forEach((child) => {
+    if (child.type === 'table') {
+      const rows = child.children[0].children;
+      const nameRow = rows.shift();
+      const className = toBlockCSSClassNames(nameRow.children[0].children[0].children[0].text).join(' ');
+      const block = { type: 'div', attributes: { class: className }, children: [] };
+      fragment.children.push(block);
+      rows.forEach((row) => {
+        const div = { type: 'div', attributes: {}, children: [] };
+        block.children.push(div);
+        row.children.forEach((col) => {
+          div.children.push({ type: 'div', attributes: {}, children: col.children });
+        });
+      });
+    } else {
+      fragment.children.push(child);
+    }
+  });
   // convert sections
   const text = tohtml(fragment);
   return `
