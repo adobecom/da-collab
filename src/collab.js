@@ -32,10 +32,24 @@ function getSchema() {
   return new Schema({ nodes, marks: customMarks });
 }
 
+function convertSectionBreak(node) {
+  if (!node) return;
+  if (node.children) {
+    node.children.forEach(convertSectionBreak);
+  }
+  if (node.tagName === 'p' && node.children && node.children.length === 1) {
+    if (node.children[0].type === 'text' && node.children[0].text === '---') {
+      node.children.clear();
+      // eslint-disable-next-line no-param-reassign
+      node.tagName = 'hr';
+    }
+  }
+}
+
 export function aem2doc(html, ydoc) {
   const tree = fromHtml(html, { fragment: true });
   const main = tree.children.find((child) => child.tagName === 'main');
-  (main?.children || []).forEach((parent) => {
+  (main.children || []).forEach((parent) => {
     if (parent.tagName === 'div' && parent.children) {
       const children = [];
       let modified = false;
@@ -67,7 +81,9 @@ export function aem2doc(html, ydoc) {
           headerRow.children.push(td);
           table.children.push(headerRow);
           rows.forEach((row) => {
-            const tr = { tagName: 'tr', children: [], properties: {} };
+            const tr = {
+              type: 'element', tagName: 'tr', children: [], properties: {},
+            };
             const cells = row.children ? [...row.children] : [row];
             cells.forEach((cell, idx) => {
               const tdi = {
@@ -84,7 +100,6 @@ export function aem2doc(html, ydoc) {
           children.push({
             type: 'element', tagName: 'p', children: [], properties: {},
           });
-          console.log(blockName);
         } else {
           children.push(child);
         }
@@ -95,8 +110,25 @@ export function aem2doc(html, ydoc) {
       }
     }
   });
-  // convert section breaks
-  // convert sections
+  convertSectionBreak(main);
+  main.children = main.children.flatMap((node, i) => {
+    const result = [];
+    if (node.tagName === 'div' && i > 0) {
+      result.push({
+        type: 'element', tagName: 'p', children: [], properties: {},
+      });
+      result.push({
+        type: 'element', tagName: 'hr', children: [], properties: {},
+      });
+      result.push({
+        type: 'element', tagName: 'p', children: [], properties: {},
+      });
+      result.push(...node.children);
+    } else {
+      result.push(node);
+    }
+    return result;
+  });
   const handler2 = {
     get(target, prop) {
       const source = target;
@@ -163,7 +195,7 @@ function tohtml(node) {
     if (node.type === 'img' && !node.attributes.loading) {
       attributes += ' loading="lazy"';
     }
-    const result = `<${node.type}${attributes}${node.type !== 'br' ? '/' : ''}>`;
+    const result = `<${node.type}${attributes}>`;
     if (node.type === 'img') {
       return `<picture><source srcset="${node.attributes.src}"><source srcset="${node.attributes.src}" media="(min-width: 600px)">${result}</picture>`;
     }
@@ -261,7 +293,18 @@ export function doc2aem(ydoc) {
     }
   });
   // convert sections
-  const text = tohtml(fragment);
+
+  const section = { type: 'div', attributes: {}, children: [] };
+  const sections = [...fragment.children].reduce((acc, child) => {
+    if (child.type === 'hr') {
+      acc.push({ type: 'div', attributes: {}, children: [] });
+    } else {
+      acc[acc.length - 1].children.push(child);
+    }
+    return acc;
+  }, [section]);
+
+  const text = sections.map((s) => tohtml(s)).join('');
   return `
 <body>
   <header></header>
