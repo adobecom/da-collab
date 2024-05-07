@@ -216,6 +216,7 @@ export const persistence = {
 
     if (!restored) {
       // restore from da-admin
+      console.log('Current:', current);
       aem2doc(current, ydoc);
     }
 
