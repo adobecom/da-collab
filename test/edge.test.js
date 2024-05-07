@@ -208,8 +208,10 @@ describe('Worker test suite', () => {
   });
 
   it('Unknown doc update request gives 404', async () => {
-    const dr = new DocRoom({ storage: null }, null);
-    dr.callGlobalFetch = async () => new Response(null, { status: 418 });
+    const storedMap = new Map();
+    storedMap.set('doc', 'anotherdoc');
+    const mockStorage = { get: async () => storedMap };
+    const dr = new DocRoom({ storage: mockStorage }, null);
 
     const req = {
       url: 'http://foobar.com/a/b/d/e/f.html?api=syncAdmin'
