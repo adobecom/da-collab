@@ -14,7 +14,22 @@ import * as Y from 'yjs';
 import { aem2doc, doc2aem } from '../src/collab.js';
 
 describe('Parsing test suite', () => {
-    it('Test empty roundtrip', async () => {
+  it('Text parsing produces error', async () => {
+    const html = `
+<body>
+  <header></header>
+  <main><div><p>I'll start again</p><ul><li><p>And here some more text</p><ol><li>And some more</li></ol></li></ul></div></main>
+  <footer></footer>
+</body>
+`;
+    const yDoc = new Y.Doc();
+    aem2doc(html, yDoc);
+    const result = doc2aem(yDoc);
+    console.log(result);
+    assert.equal(result, html);
+  })
+
+  it('Test empty roundtrip', async () => {
         const html = `
 <body>
   <header></header>
@@ -108,21 +123,6 @@ const result = doc2aem(yDoc);
 console.log(result);
 assert.equal(result, html);
 });
-
-  it('Text parsing produces error', async () => {
-    const html = `
-    <body>
-    <header></header>
-    <main><div><p>I'll start again</p><ul><li><p>And here some more text</p><ol><li>And some more</li></ol></li></ul></div></main>
-    <footer></footer>
-    </body>
-    `;
-    const yDoc = new Y.Doc();
-    aem2doc(html, yDoc);
-    const result = doc2aem(yDoc);
-    console.log(result);
-    assert.equal(result, html);
-  })
 });
 
 

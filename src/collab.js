@@ -180,6 +180,10 @@ export function aem2doc(html, ydoc) {
         return (name) => (target.properties ? target.properties[name] : undefined);
       }
 
+      if (prop === 'hasAttribute') {
+        return (name) => target.properties && target.properties[name];
+      }
+
       if (prop === 'style') {
         return {};
       }
