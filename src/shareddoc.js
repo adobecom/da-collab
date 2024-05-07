@@ -168,7 +168,6 @@ export const persistence = {
     try {
       const content = doc2aem(ydoc);
       if (current !== content) {
-        console.log(`DOC2AEM: ${doc2aem(ydoc)}`);
         const { ok, status, statusText } = await persistence.put(ydoc, content);
 
         if (!ok) {

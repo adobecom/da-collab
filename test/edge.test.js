@@ -11,8 +11,10 @@
  */
 import assert from 'assert';
 
+import * as Y from 'yjs';
 import defaultEdge, { DocRoom, handleApiRequest, handleErrors } from '../src/edge.js';
-import { persistence, setYDoc } from '../src/shareddoc.js';
+import { WSSharedDoc, persistence, setYDoc } from '../src/shareddoc.js';
+import { doc2aem } from '../src/collab.js';
 
 function hash(str) {
   let hash = 0;
@@ -179,14 +181,19 @@ describe('Worker test suite', () => {
   });
 
   it('Docroom syncFromAdmin', async () => {
-    const aemMap = new Map();
     const ydocName = 'http://foobar.com/a/b/c.html';
-    const mockYdoc = {
-      conns: [],
-      name: ydocName,
-      getMap(name) { return name === 'aem' ? aemMap : null; }
-    };
-    setYDoc(ydocName, mockYdoc);
+
+    const mockFetch = async (url) => {
+      if (url === ydocName) {
+        return new Response('<main><div>Yay!</div></main>', { status: 200 });
+      }
+      return null;
+    }
+    const daadmin = { fetch: mockFetch };
+
+    const testYdoc = new WSSharedDoc(ydocName);
+    testYdoc.daadmin = daadmin;
+    setYDoc(ydocName, testYdoc);
 
     const req = {
       url: `${ydocName}?api=syncAdmin`
@@ -196,25 +203,11 @@ describe('Worker test suite', () => {
     const mockStorage = { deleteAll: () => storageCalled.push('deleteAll') };
     const dr = new DocRoom({ storage: mockStorage }, null);
 
-    const mockFetch = async (url) => {
-      if (url === ydocName) {
-        return new Response('Document content', { status: 200 });
-      }
-      return null;
-    }
-    const oldPFectch = persistence.fetch;
-    persistence.fetch = mockFetch;
+    const resp = await dr.fetch(req)
 
-    try {
-      assert(!aemMap.get('svrinv'), 'Precondition');
-      const resp = await dr.fetch(req)
-
-      assert.equal(200, resp.status);
-      assert.equal('Document content', aemMap.get('svrinv'));
-      assert.deepStrictEqual(['deleteAll'], storageCalled);
-    } finally {
-      persistence.fetch = oldPFectch;
-    }
+    assert.equal(200, resp.status);
+    assert(doc2aem(testYdoc).includes('Yay!'));
+    assert.deepStrictEqual(['deleteAll'], storageCalled);
   });
 
   it('Unknown doc update request gives 404', async () => {
