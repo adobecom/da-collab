@@ -32,10 +32,24 @@ function getSchema() {
   return new Schema({ nodes, marks: customMarks });
 }
 
-export async function aem2doc(html, ydoc) {
+function convertSectionBreak(node) {
+  if (!node) return;
+  if (node.children) {
+    node.children.forEach(convertSectionBreak);
+  }
+  if (node.tagName === 'p' && node.children && node.children.length === 1) {
+    if (node.children[0].type === 'text' && node.children[0].text === '---') {
+      node.children.clear();
+      // eslint-disable-next-line no-param-reassign
+      node.tagName = 'hr';
+    }
+  }
+}
+
+export function aem2doc(html, ydoc) {
   const tree = fromHtml(html, { fragment: true });
   const main = tree.children.find((child) => child.tagName === 'main');
-  (main?.children || []).forEach((parent) => {
+  (main.children || []).forEach((parent) => {
     if (parent.tagName === 'div' && parent.children) {
       const children = [];
       let modified = false;
@@ -61,14 +75,16 @@ export async function aem2doc(html, ydoc) {
           };
 
           const td = {
-            type: 'element', tagName: 'td', children: [{ type: 'text', value: name }], properties: { colspan: maxCols },
+            type: 'element', tagName: 'td', children: [{ type: 'text', value: blockName }], properties: { colspan: maxCols },
           };
 
           headerRow.children.push(td);
           table.children.push(headerRow);
-          rows.forEach((row) => {
-            const tr = { tagName: 'tr', children: [], properties: {} };
-            const cells = row.children ? [...row.children] : [row];
+          rows.filter((row) => row.tagName === 'div').forEach((row) => {
+            const tr = {
+              type: 'element', tagName: 'tr', children: [], properties: {},
+            };
+            const cells = (row.children ? [...row.children] : [row]).filter((cell) => cell.type !== 'text' || (cell.value && cell.value.trim() !== '\n' && cell.value.trim() !== ''));
             cells.forEach((cell, idx) => {
               const tdi = {
                 type: 'element', tagName: 'td', children: [], properties: {},
@@ -84,7 +100,6 @@ export async function aem2doc(html, ydoc) {
           children.push({
             type: 'element', tagName: 'p', children: [], properties: {},
           });
-          console.log(blockName);
         } else {
           children.push(child);
         }
@@ -95,8 +110,31 @@ export async function aem2doc(html, ydoc) {
       }
     }
   });
-  // convert section breaks
-  // convert sections
+  convertSectionBreak(main);
+  let count = 0;
+  main.children = main.children.flatMap((node) => {
+    const result = [];
+    if (node.tagName === 'div') {
+      if (count > 0) {
+        result.push({
+          type: 'element', tagName: 'p', children: [], properties: {},
+        });
+        result.push({
+          type: 'element', tagName: 'hr', children: [], properties: {},
+        });
+        result.push({
+          type: 'element', tagName: 'p', children: [], properties: {},
+        });
+        result.push(...node.children);
+      } else {
+        result.push(node);
+      }
+      count += 1;
+    } else {
+      result.push(node);
+    }
+    return result;
+  });
   const handler2 = {
     get(target, prop) {
       const source = target;
@@ -163,10 +201,11 @@ function tohtml(node) {
     if (node.type === 'img' && !node.attributes.loading) {
       attributes += ' loading="lazy"';
     }
-    const result = `<${node.type}${attributes}${node.type !== 'br' ? '/' : ''}>`;
     if (node.type === 'img') {
-      return `<picture><source srcset="${node.attributes.src}"><source srcset="${node.attributes.src}" media="(min-width: 600px)">${result}</picture>`;
+      return `<picture><source srcset="${node.attributes.src}"><source srcset="${node.attributes.src}" media="(min-width: 600px)"><${node.type}${attributes}></picture>`;
     }
+
+    const result = node.type !== 'br' ? `<${node.type}${attributes}></${node.type}>` : `<${node.type}>`;
 
     return result;
   }
@@ -178,8 +217,35 @@ function tohtml(node) {
       }
     }
   }
+  if (node.type === 'p') {
+    if (children.length === 1) {
+      if (children[0].type === 'img') {
+        return children.map((child) => tohtml(child)).join('');
+      }
+    }
+  }
   return `<${node.type}${attributes}>${children.map((child) => tohtml(child)).join('')}</${node.type}>`;
 }
+
+function toBlockCSSClassNames(text) {
+  if (!text) return [];
+  const names = [];
+  const idx = text.lastIndexOf('(');
+  if (idx >= 0) {
+    names.push(text.substring(0, idx));
+    names.push(...text.substring(idx + 1).split(','));
+  } else {
+    names.push(text);
+  }
+
+  return names.map((name) => name
+    .toLowerCase()
+    .replace(/[^0-9a-z]+/g, '-')
+    .replace(/^-+/, '')
+    .replace(/-+$/, ''))
+    .filter((name) => !!name);
+}
+
 export function doc2aem(ydoc) {
   const schema = getSchema();
   const json = yDocToProsemirror(schema, ydoc);
@@ -213,8 +279,39 @@ export function doc2aem(ydoc) {
     .serializeFragment(json.content, { document: new Proxy({}, handler3) });
 
   // convert table to blocks
+  const { children } = fragment;
+  fragment.children = [];
+  children.forEach((child) => {
+    if (child.type === 'table') {
+      const rows = child.children[0].children;
+      const nameRow = rows.shift();
+      const className = toBlockCSSClassNames(nameRow.children[0].children[0].children[0].text).join(' ');
+      const block = { type: 'div', attributes: { class: className }, children: [] };
+      fragment.children.push(block);
+      rows.forEach((row) => {
+        const div = { type: 'div', attributes: {}, children: [] };
+        block.children.push(div);
+        row.children.forEach((col) => {
+          div.children.push({ type: 'div', attributes: {}, children: col.children });
+        });
+      });
+    } else {
+      fragment.children.push(child);
+    }
+  });
   // convert sections
-  const text = tohtml(fragment);
+
+  const section = { type: 'div', attributes: {}, children: [] };
+  const sections = [...fragment.children].reduce((acc, child) => {
+    if (child.type === 'hr') {
+      acc.push({ type: 'div', attributes: {}, children: [] });
+    } else {
+      acc[acc.length - 1].children.push(child);
+    }
+    return acc;
+  }, [section]);
+
+  const text = sections.map((s) => tohtml(s)).join('');
   return `
 <body>
   <header></header>
