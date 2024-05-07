@@ -274,12 +274,6 @@ export class WSSharedDoc extends Y.Doc {
   }
 }
 
-export function wait(milliseconds) {
-  return new Promise((r) => {
-    setTimeout(r, milliseconds);
-  });
-}
-
 export const getYDoc = async (docname, conn, env, storage, gc = true) => {
   let doc = docs.get(docname);
   if (doc === undefined) {
