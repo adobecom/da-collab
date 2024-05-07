@@ -412,17 +412,15 @@ describe('Collab Test Suite', () => {
     const mockYDoc = {
       conns: { keys() { return [ {} ] }},
       name: 'http://foo.bar/0/123.html',
-      getMap(nm) { return nm === 'aem' ? docMap : null }
     };
 
-    const mockGet = () => {
+    pss.persistence.get = () => {
       return 'Svr content';
     };
 
     const storageCalls = [];
     const mockStorage = { deleteAll: async () => storageCalls.push('deleteAll') };
 
-    pss.persistence.get = mockGet;
     await pss.persistence.invalidate(mockYDoc, mockStorage);
     assert.equal(0, aem2DocCalled.length);
     assert.equal(0, storageCalls.length);
@@ -655,7 +653,7 @@ describe('Collab Test Suite', () => {
       assert(doc2aem(ydoc).includes('myinitial'));
       assert.equal(2, updObservers.length);
 
-      ydoc.getMap('aem').set('a', 'bcd');
+      ydoc.getMap('yah').set('a', 'bcd');
       await updObservers[0]();
       await updObservers[1]();
 
@@ -669,7 +667,7 @@ describe('Collab Test Suite', () => {
       const ydoc2 = new Y.Doc();
       Y.applyUpdate(ydoc2, called[1].docstore);
 
-      assert.equal('bcd', ydoc2.getMap('aem').get('a'));
+      assert.equal('bcd', ydoc2.getMap('yah').get('a'));
       assert(doc2aem(ydoc2).includes('myinitial'));
     } finally {
       globalThis.setTimeout = savedSetTimeout;
@@ -829,18 +827,8 @@ describe('Collab Test Suite', () => {
         states: awarenessStates
       };
 
-      // Set something on the 'content' value of the 'aem' map. This saves the
-      // getYDoc call from waiting 500 ms when called via setupWSConnection.
-      const docAEMMap = new Map();
-      docAEMMap.set('content', 'something');
-
       const ydoc = await getYDoc(docName, mockConn, {}, {}, true);
       ydoc.awareness = awareness;
-      ydoc.getMap = (n) => {
-        if (n === 'aem') {
-          return docAEMMap;
-        }
-      }
 
       await setupWSConnection(mockConn, docName, {}, {});
 

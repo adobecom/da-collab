@@ -339,9 +339,7 @@ export const deleteFromAdmin = async (docName, storage) => {
   const ydoc = docs.get(docName);
   if (ydoc) {
     // If we still have the ydoc, set it to be empty.
-    // Note that it needs to contain at least one character to be picked up
-    // so setting it to a space.
-    ydoc.getMap('aem').set('svrinv', ' ');
+    aem2doc('<main><div></div></main>', ydoc); // TODO check this
   }
 
   const keys = await storage.get(['docstore', 'chunks', 'doc']);

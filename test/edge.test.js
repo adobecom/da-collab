@@ -136,12 +136,9 @@ describe('Worker test suite', () => {
   });
 
   it('Docroom deleteFromAdmin', async () => {
-    const aemMap = new Map();
     const ydocName = 'http://foobar.com/q.html';
-    const mockYdoc = {
-      getMap(name) { return name === 'aem' ? aemMap : null; }
-    };
-    setYDoc(ydocName, mockYdoc);
+    const testYdoc = new WSSharedDoc(ydocName);
+    setYDoc(ydocName, testYdoc);
 
     const req = {
       url: `${ydocName}?api=deleteAdmin`
@@ -164,7 +161,7 @@ describe('Worker test suite', () => {
     const resp = await dr.fetch(req)
     assert.equal(204, resp.status);
     assert.deepStrictEqual(['deleteAll'], storageCalled);
-    assert.equal(' ', aemMap.get('svrinv'));
+    assert(doc2aem(testYdoc).includes('<main><div></div></main>'));
   });
 
   it('Docroom deleteFromAdmin not found', async () => {
