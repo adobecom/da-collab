@@ -27,6 +27,7 @@ export async function handleErrors(request, func) {
   try {
     return await func();
   } catch (err) {
+    console.log('Error caught', err);
     if (request.headers.get('Upgrade') === 'websocket') {
       // Annoyingly, if we return an HTTP error in response to a WebSocket request, Chrome devtools
       // won't show us the response body! So... let's send a WebSocket response with an error
@@ -80,7 +81,7 @@ async function handleApiCall(url, request, env) {
   }
 }
 
-export async function handleApiRequest(request, env, ffetch = fetch) {
+export async function handleApiRequest(request, env) {
   // We've received at API request.
   const url = new URL(request.url);
   if (url.pathname.startsWith('/api/')) {
@@ -114,16 +115,9 @@ export async function handleApiRequest(request, env, ffetch = fetch) {
       opts.headers = new Headers({ Authorization: auth });
     }
 
-    let initialReq;
-    if (env.daadmin) {
-      // If service binding set, use that to call da-admin
-
-      // eslint-disable-next-line no-console
-      console.log('Using service binding to contact da-admin');
-      initialReq = await env.daadmin.fetch(docName, opts);
-    } else {
-      initialReq = await ffetch(docName, opts);
-    }
+    // eslint-disable-next-line no-console
+    console.log('Using service binding to contact da-admin');
+    const initialReq = await env.daadmin.fetch(docName, opts);
 
     if (!initialReq.ok && initialReq.status !== 404) {
       // eslint-disable-next-line no-console
@@ -158,7 +152,9 @@ export async function handleApiRequest(request, env, ffetch = fetch) {
   // Send the request to the object. The `fetch()` method of a Durable Object stub has the
   // same signature as the global `fetch()` function, but the request is always sent to the
   // object, regardless of the request's URL.
-  return roomObject.fetch(req);
+  const resp = await roomObject.fetch(req);
+  console.log('Resp obtained', resp.status, resp.statusText);
+  return resp;
 }
 
 // In modules-syntax workers, we use `export default` to export our script's main event handlers.
@@ -184,6 +180,7 @@ export class DocRoom {
     this.env = env;
   }
 
+  // eslint-disable-next-line class-methods-use-this
   async handleApiCall(url, request) {
     const qidx = request.url.indexOf('?');
     const baseURL = request.url.substring(0, qidx);
@@ -191,13 +188,16 @@ export class DocRoom {
     const api = url.searchParams.get('api');
     switch (api) {
       case 'deleteAdmin':
-        if (await deleteFromAdmin(baseURL, this.storage)) {
-          return new Response(null, { status: 204 });
-        } else {
-          return new Response('Not Found', { status: 404 });
-        }
+        // if (await deleteFromAdmin(baseURL, this.storage)) {
+        //   return new Response(null, { status: 204 });
+        // } else {
+        //   return new Response('Not Found', { status: 404 });
+        // }
+
+        // delete does the same as sync
+        // eslint-disable-next-line no-fallthrough
       case 'syncAdmin':
-        if (await invalidateFromAdmin(baseURL, this.storage)) {
+        if (await invalidateFromAdmin(baseURL)) {
           return new Response('OK', { status: 200 });
         } else {
           return new Response('Not Found', { status: 404 });
@@ -262,5 +262,6 @@ export class DocRoom {
     console.log(`setupWSConnection ${docName} with auth(${webSocket.auth
       ? webSocket.auth.substring(0, webSocket.auth.indexOf(' ')) : 'none'})`);
     await setupWSConnection(webSocket, docName, this.env, this.storage);
+    console.log('setupWSConnection done');
   }
 }
