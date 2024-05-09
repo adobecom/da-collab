@@ -185,9 +185,9 @@ export const persistence = {
       const stored = await readState(docName, storage);
       if (stored && stored.length > 0) {
         Y.applyUpdate(ydoc, stored);
-        const fromDaAdmin = doc2aem(ydoc);
 
-        if (fromDaAdmin === current) {
+        const fromStorage = doc2aem(ydoc);
+        if (fromStorage === current) {
           restored = true;
 
           // eslint-disable-next-line no-console
