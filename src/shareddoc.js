@@ -152,21 +152,7 @@ export const persistence = {
       statusText,
     };
   },
-  invalidate: async (ydoc, storage) => {
-    const auth = Array.from(ydoc.conns.keys())
-      .map((con) => con.auth);
-    const authHeader = auth.length > 0 ? [...new Set(auth)].join(',') : undefined;
-
-    const svrContent = await persistence.get(ydoc.name, authHeader, ydoc.daadmin);
-    const cliContent = doc2aem(ydoc);
-    if (svrContent !== cliContent) {
-      // Only update the client if they're different
-      aem2doc(svrContent, ydoc);
-      await storage.deleteAll();
-    }
-  },
   update: async (ydoc, current) => {
-    console.log('update');
     let closeAll = false;
     try {
       const content = doc2aem(ydoc);
@@ -208,19 +194,7 @@ export const persistence = {
         console.log('fetch', await rsp.text());
         console.log('current', current);
         /* */
-        // also do a curl http://localhost:8787/source/bosschaert/da-aem-boilerplate/blah11.html
         if (fromDaAdmin === current) {
-        // if (doc2aem(ydoc) === current) {
-        // Create a temp YDoc to see if the stored state is the same as the da-admin state
-        // const tempDoc = new Y.Doc();
-        // Y.applyUpdate(tempDoc, stored);
-
-        // const tempState = doc2aem(tempDoc);
-        // console.log('tempState', tempState);
-        // console.log('current', current);
-        // if (tempState === current) {
-        //   // If they are the same we can use the stored state
-        //   Y.applyUpdate(ydoc, stored);
           restored = true;
 
           // eslint-disable-next-line no-console
@@ -233,27 +207,23 @@ export const persistence = {
     }
 
     if (!restored) {
-      // // wipe the doc before setting it again
-      // aem2doc('<main><div></div></main>', ydoc); // TODO ???
-      // const xmlfragment = ydoc.getXmlFragment('prosemirror');
-      // xmlfragment.delete(0, xmlfragment.length);
-
-      // restore from da-admin
-      aem2doc(current, ydoc);
-      // eslint-disable-next-line no-console
-      console.log('Restored from da-admin', docName);
+      setTimeout(() => {
+        if (ydoc === docs.get(docName)) {
+          // restore from da-admin
+          aem2doc(current, ydoc);
+          // eslint-disable-next-line no-console
+          console.log('Restored from da-admin', docName);
+        }
+      }, 1000);
     }
 
-    setTimeout(() => {
-      ydoc.on('update', async () => {
-        console.log('y');
-        if (ydoc === docs.get(docName)) { // make sure this ydoc is still active
-          storeState(docName, Y.encodeStateAsUpdate(ydoc), storage);
-        }
-      });
-    }, 15000); // start writing the state to the worker storage after 15 secs
+    ydoc.on('update', async () => {
+      if (ydoc === docs.get(docName)) { // make sure this ydoc is still active
+        storeState(docName, Y.encodeStateAsUpdate(ydoc), storage);
+      }
+    });
+
     ydoc.on('update', debounce(async () => {
-      console.log('x');
       if (ydoc === docs.get(docName)) {
         current = await persistence.update(ydoc, current);
       }
@@ -308,7 +278,6 @@ export class WSSharedDoc extends Y.Doc {
 export const getYDoc = async (docname, conn, env, storage, gc = true) => {
   let doc = docs.get(docname);
   if (doc === undefined) {
-    console.log('Getting new YDOC');
     doc = new WSSharedDoc(docname);
     doc.gc = gc;
     docs.set(docname, doc);
@@ -317,15 +286,13 @@ export const getYDoc = async (docname, conn, env, storage, gc = true) => {
   if (!doc.conns.get(conn)) {
     doc.conns.set(conn, new Set());
   }
+
   doc.daadmin = env.daadmin;
   if (!doc.promise) {
-    console.log('Calling bindstate');
     doc.promise = persistence.bindState(docname, doc, conn, storage);
   }
 
-  console.log('Awaiting promise, keys', docs.keys());
   await doc.promise;
-  console.log('Promise resolved');
   return doc;
 };
 
@@ -362,33 +329,6 @@ export const messageListener = (conn, doc, message) => {
     console.error(err);
     doc.emit('error', [err]);
   }
-};
-
-// TODO
-export const deleteFromAdmin = async (docName, storage) => {
-  const ydoc = docs.get(docName);
-  if (ydoc) {
-    // If we still have the ydoc, set it to be empty.
-    aem2doc('<main><div></div></main>', ydoc);
-  }
-
-  const keys = await storage.get(['docstore', 'chunks', 'doc']);
-  const storedDoc = keys.get('doc');
-  if (storedDoc && storedDoc !== docName) {
-    // eslint-disable-next-line no-console
-    console.log('Mismatch between requested and found doc. Requested', docName, 'found', keys.get('doc'));
-    return false;
-  }
-
-  // eslint-disable-next-line no-console
-  console.log(
-    'Deleting storage for',
-    docName,
-    'containing',
-    keys.has('docstore') ? 'docstore' : `keys=${keys.chunks}`,
-  );
-  await storage.deleteAll();
-  return true;
 };
 
 export const invalidateFromAdmin = async (docName) => {

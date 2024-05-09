@@ -123,6 +123,20 @@ const result = doc2aem(yDoc);
 console.log(result);
 assert.equal(result, html);
 });
+it('Test linebreak roundtrip', async () => {
+  const html =`
+<body>
+  <header></header>
+  <main><div><p>Is this broken?</p></div></main>
+  <footer></footer>
+</body>
+`;
+const yDoc = new Y.Doc();
+aem2doc(html, yDoc);
+const result = doc2aem(yDoc);
+console.log(result);
+assert.equal(result, html);
+});
 });
 
 

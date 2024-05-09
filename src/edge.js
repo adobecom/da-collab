@@ -9,7 +9,7 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-import { deleteFromAdmin, invalidateFromAdmin, setupWSConnection } from './shareddoc.js';
+import { invalidateFromAdmin, setupWSConnection } from './shareddoc.js';
 
 // This is the Edge Worker, built using Durable Objects!
 
@@ -27,7 +27,6 @@ export async function handleErrors(request, func) {
   try {
     return await func();
   } catch (err) {
-    console.log('Error caught', err);
     if (request.headers.get('Upgrade') === 'websocket') {
       // Annoyingly, if we return an HTTP error in response to a WebSocket request, Chrome devtools
       // won't show us the response body! So... let's send a WebSocket response with an error
@@ -152,9 +151,7 @@ export async function handleApiRequest(request, env) {
   // Send the request to the object. The `fetch()` method of a Durable Object stub has the
   // same signature as the global `fetch()` function, but the request is always sent to the
   // object, regardless of the request's URL.
-  const resp = await roomObject.fetch(req);
-  console.log('Resp obtained', resp.status, resp.statusText);
-  return resp;
+  return roomObject.fetch(req);
 }
 
 // In modules-syntax workers, we use `export default` to export our script's main event handlers.
@@ -188,12 +185,6 @@ export class DocRoom {
     const api = url.searchParams.get('api');
     switch (api) {
       case 'deleteAdmin':
-        // if (await deleteFromAdmin(baseURL, this.storage)) {
-        //   return new Response(null, { status: 204 });
-        // } else {
-        //   return new Response('Not Found', { status: 404 });
-        // }
-
         // delete does the same as sync
         // eslint-disable-next-line no-fallthrough
       case 'syncAdmin':
@@ -262,6 +253,5 @@ export class DocRoom {
     console.log(`setupWSConnection ${docName} with auth(${webSocket.auth
       ? webSocket.auth.substring(0, webSocket.auth.indexOf(' ')) : 'none'})`);
     await setupWSConnection(webSocket, docName, this.env, this.storage);
-    console.log('setupWSConnection done');
   }
 }
