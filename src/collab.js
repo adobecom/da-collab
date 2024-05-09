@@ -10,7 +10,7 @@
  * governing permissions and limitations under the License.
  */
 import {
-  prosemirrorToYXmlFragment, updateYFragment, yDocToProsemirror,
+  prosemirrorToYXmlFragment, yDocToProsemirror,
 } from 'y-prosemirror';
 import {
   DOMParser, DOMSerializer, Schema,
@@ -188,13 +188,11 @@ export function aem2doc(html, ydoc) {
         return {};
       }
 
-      console.log('Reflecting up: ', prop);
       return Reflect.get(target, prop);
     },
   };
   const json = DOMParser.fromSchema(getSchema()).parse(new Proxy(main, handler2));
   prosemirrorToYXmlFragment(json, ydoc.getXmlFragment('prosemirror'));
-  // updateYFragment(ydoc, ydoc.getXmlFragment('prosemirror'), json, new Map());
 }
 
 function tohtml(node) {
