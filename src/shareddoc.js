@@ -110,8 +110,6 @@ export const storeState = async (docName, state, storage, chunkSize = MAX_STORAG
 export const persistence = {
   closeConn: closeConn.bind(this),
   get: async (docName, auth, daadmin) => {
-    // const initalOpts = { cache: 'no-store' }; cache not implemented
-    // const initalOpts = { cf: { cacheTtl: 0 } };
     const initalOpts = {};
     if (auth) {
       initalOpts.headers = new Headers({ Authorization: auth });
@@ -188,12 +186,7 @@ export const persistence = {
       if (stored && stored.length > 0) {
         Y.applyUpdate(ydoc, stored);
         const fromDaAdmin = doc2aem(ydoc);
-        /* */
-        console.log('fromDaAdmin', fromDaAdmin);
-        const rsp = await fetch(docName);
-        console.log('fetch', await rsp.text());
-        console.log('current', current);
-        /* */
+
         if (fromDaAdmin === current) {
           restored = true;
 

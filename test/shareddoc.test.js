@@ -171,7 +171,7 @@ describe('Collab Test Suite', () => {
       return { ok: false, text: async () => { throw new Error(); }, status: 404, statusText: 'Not Found' };
     };
     const result = await persistence.get('foo', 'auth', daadmin);
-    assert.equal(result, '');
+    assert.equal(result, '<main></main>');
   });
 
   it('Test persistence get throws', async () => {
@@ -319,111 +319,27 @@ describe('Collab Test Suite', () => {
   });
 
   it('Test invalidateFromAdmin', async () => {
-    const oldFun = persistence.invalidate;
+    const docName = 'http://blah.di.blah/a/ha.html';
 
-    const calledWith = [];
-    const mockInvalidate = async (ydoc) => {
-      calledWith.push(ydoc.name);
-    }
+    const closeCalled = [];
+    const conn1 = { close: () => closeCalled.push('close1') };
+    const conn2 = { close: () => closeCalled.push('close2') };
+    const conns = new Map();
+    conns.set(conn1, new Set());
+    conns.set(conn2, new Set());
 
-    const mockYDoc = {};
-    mockYDoc.name = 'http://blah.di.blah/a/ha.html';
-    setYDoc(mockYDoc.name, mockYDoc);
+    const mockYDoc = { conns };
 
-    const stored = new Map();
-    stored.set('doc', 'http://foo.bar/123.html');
+    const m = setYDoc(docName, mockYDoc);
 
-    const storageCalled = []
-    const mockStorage = {
-      deleteAll: () => storageCalled.push('deleteAll'),
-      get: () => stored
-    }
+    assert(m.has(docName), 'Precondition');
+    invalidateFromAdmin(docName);
+    assert(!m.has(docName), 'Document should have been removed from global map');
 
-    try {
-      persistence.invalidate = mockInvalidate;
-
-      assert.equal(0, calledWith.length, 'Precondition');
-      assert(!await invalidateFromAdmin('http://foo.bar/123.html', mockStorage));
-      assert.equal(0, calledWith.length);
-      assert.deepStrictEqual(['deleteAll'], storageCalled);
-
-      assert(await invalidateFromAdmin('http://blah.di.blah/a/ha.html', mockStorage));
-      assert.deepStrictEqual(['http://blah.di.blah/a/ha.html'], calledWith);
-    } finally {
-      persistence.invalidate = oldFun;
-    }
-  });
-
-  it('Test persistence invalidate', async () => {
-    const aem2DocCalled = [];
-    const mockAem2Doc = (sc, yd) => aem2DocCalled.push(sc, yd);
-    const mockDoc2Aem = () => 'Cli content';
-    const pss = await esmock(
-      '../src/shareddoc.js', {
-        '../src/collab.js': {
-          aem2doc: mockAem2Doc,
-          doc2aem: mockDoc2Aem
-        }
-      });
-
-    const conn1 = { auth: 'auth1' };
-    const conn2 = { auth: 'auth2' };
-
-    const mockYDoc = {
-      conns: { keys() { return [ conn1, conn2 ] }},
-      name: 'http://foo.bar/0/123.html',
-    };
-
-    const getCalls = [];
-    const mockGet = (docName, auth) => {
-      getCalls.push(docName);
-      getCalls.push(auth);
-      return 'Svr content';
-    };
-
-    const storageCalls = [];
-    const mockStorage = { deleteAll: async () => storageCalls.push('deleteAll') };
-
-    pss.persistence.get = mockGet;
-    await pss.persistence.invalidate(mockYDoc, mockStorage);
-
-    assert.equal(2, aem2DocCalled.length);
-    assert.equal('Svr content', aem2DocCalled[0]);
-    assert.equal(mockYDoc, aem2DocCalled[1]);
-    assert.equal(2, getCalls.length);
-    assert.equal('http://foo.bar/0/123.html', getCalls[0]);
-    assert.equal(['auth1,auth2'], getCalls[1]);
-
-    assert.deepStrictEqual(['deleteAll'], storageCalls);
-  });
-
-  it('Test persistence invalidate does nothing if client up to date', async () => {
-    const aem2DocCalled = [];
-    const mockAem2Doc = (sc, yd) => aem2DocCalled.push(sc, yd);
-    const mockDoc2Aem = () => 'Svr content';
-    const pss = await esmock(
-      '../src/shareddoc.js', {
-        '../src/collab.js': {
-          aem2doc: mockAem2Doc,
-          doc2aem: mockDoc2Aem
-        }
-      });
-
-    const mockYDoc = {
-      conns: { keys() { return [ {} ] }},
-      name: 'http://foo.bar/0/123.html',
-    };
-
-    pss.persistence.get = () => {
-      return 'Svr content';
-    };
-
-    const storageCalls = [];
-    const mockStorage = { deleteAll: async () => storageCalls.push('deleteAll') };
-
-    await pss.persistence.invalidate(mockYDoc, mockStorage);
-    assert.equal(0, aem2DocCalled.length);
-    assert.equal(0, storageCalls.length);
+    const res1 = ['close1', 'close2'];
+    const res2 = ['close2', 'close1'];
+    assert(res1.toString() === closeCalled.toString()
+      || res2.toString() === closeCalled.toString());
   });
 
   it('Test close connection', async () => {
@@ -492,6 +408,7 @@ describe('Collab Test Suite', () => {
     const mockConn = {
       auth: 'myauth'
     };
+    pss.setYDoc(docName, testYDoc);
 
     const mockStorage = { list: () => new Map() };
 
@@ -502,10 +419,15 @@ describe('Collab Test Suite', () => {
     assert.equal(0, updated.size, 'Precondition');
     await pss.persistence.bindState(docName, testYDoc, mockConn, mockStorage);
 
+    assert.equal(0, aem2DocCalled.length, 'Precondition, it\'s important to handle the doc setting async');
+
+    // give the async methods a change to finish
+    await wait(1500);
+
     assert.equal(2, aem2DocCalled.length);
     assert.equal('Get: http://lalala.com/ha/ha/ha.html-myauth-daadmin', aem2DocCalled[0]);
     assert.equal(testYDoc, aem2DocCalled[1]);
-  })
+  }).timeout(5000);
 
   it('Test bindstate read from worker storage', async () => {
     const docName = 'https://admin.da.live/source/foo/bar.html';
@@ -548,10 +470,15 @@ describe('Collab Test Suite', () => {
   it('Test bindstate falls back to daadmin on worker storage error', async () => {
     const docName = 'https://admin.da.live/source/foo/bar.html';
     const ydoc = new Y.Doc();
+    setYDoc(docName, ydoc);
+
     const storage = { list: async () => { throw new Error('yikes') } };
 
     const savedGet = persistence.get;
+    const savedSetTimeout = globalThis.setTimeout;
     try {
+      globalThis.setTimeout = (f) => f(); // run timeout method instantly
+
       persistence.get = async () => `
         <body>
         <header></header>
@@ -563,6 +490,7 @@ describe('Collab Test Suite', () => {
       assert(doc2aem(ydoc).includes('<div><p>From daadmin</p></div>'));
     } finally {
       persistence.get = savedGet;
+      globalThis.setTimeout = savedSetTimeout;
     }
   });
 
@@ -584,6 +512,7 @@ describe('Collab Test Suite', () => {
         updObservers.push(fun);
       }
     };
+    pss.setYDoc(docName, ydoc);
 
     const savedSetTimeout = globalThis.setTimeout;
     const savedGet = pss.persistence.get;
@@ -599,7 +528,7 @@ describe('Collab Test Suite', () => {
       const putCalls = []
       pss.persistence.put = async (yd, c) => {
         if (yd === ydoc && c.includes('newcontent')) {
-          putCalls.push('done');
+          putCalls.push(c);
           return { ok: true, status: 200 };
         }
       };
@@ -611,7 +540,12 @@ describe('Collab Test Suite', () => {
       assert.equal(2, updObservers.length);
       await updObservers[0]();
       await updObservers[1]();
-      assert.deepStrictEqual(['done'], putCalls);
+      assert.equal(1, putCalls.length);
+      assert.equal(`<body>
+  <header></header>
+  <main><div><p>newcontent</p></div></main>
+  <footer></footer>
+</body>`, putCalls[0].trim());
     } finally {
       globalThis.setTimeout = savedSetTimeout;
       pss.persistence.get = savedGet;
@@ -630,6 +564,7 @@ describe('Collab Test Suite', () => {
         updObservers.push(fun);
       }
     };
+    setYDoc(docName, ydoc);
 
     const conn = {};
     const called = [];
@@ -656,9 +591,6 @@ describe('Collab Test Suite', () => {
       ydoc.getMap('yah').set('a', 'bcd');
       await updObservers[0]();
       await updObservers[1]();
-
-      // give the async methods a change to finish
-      await wait(100);
 
       // check that it was stored
       assert.equal(2, called.length);

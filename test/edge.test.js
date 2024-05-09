@@ -138,30 +138,25 @@ describe('Worker test suite', () => {
   it('Docroom deleteFromAdmin', async () => {
     const ydocName = 'http://foobar.com/q.html';
     const testYdoc = new WSSharedDoc(ydocName);
-    setYDoc(ydocName, testYdoc);
+    const m = setYDoc(ydocName, testYdoc);
+
+    const connCalled = []
+    const mockConn = {
+      close() { connCalled.push('close'); }
+    };
+    testYdoc.conns.set(mockConn, 1234);
 
     const req = {
       url: `${ydocName}?api=deleteAdmin`
     };
 
-    const storageMap = new Map();
-    storageMap.set('docstore', 'mystore');
-    storageMap.set('doc', ydocName);
-    const storageCalled = [];
-    const mockStorage = {
-      deleteAll: () => storageCalled.push('deleteAll'),
-      get: (fields) => {
-        if (['docstore', 'chunks', 'doc'].every((v,i)=> v === fields[i])) {
-          return storageMap;
-        }
-      }
-    };
-    const dr = new DocRoom({ storage: mockStorage }, null);
+    const dr = new DocRoom({});
 
+    assert(m.has(ydocName), 'Precondition');
     const resp = await dr.fetch(req)
     assert.equal(204, resp.status);
-    assert.deepStrictEqual(['deleteAll'], storageCalled);
-    assert(doc2aem(testYdoc).includes('<main><div></div></main>'));
+    assert(!m.has(ydocName), 'Doc should have been removed');
+    assert.deepStrictEqual(['close'], connCalled);
   });
 
   it('Docroom deleteFromAdmin not found', async () => {
@@ -169,49 +164,37 @@ describe('Worker test suite', () => {
       url: `https://blah.blah/blah.html?api=deleteAdmin`
     };
 
-    const storedMap = new Map();
-    storedMap.set('doc', 'anotherdoc');
-    const mockStorage = { get: () => storedMap };
-    const dr = new DocRoom({ storage: mockStorage }, null);
+    const dr = new DocRoom({});
     const resp = await dr.fetch(req)
     assert.equal(404, resp.status);
   });
 
   it('Docroom syncFromAdmin', async () => {
     const ydocName = 'http://foobar.com/a/b/c.html';
-
-    const mockFetch = async (url) => {
-      if (url === ydocName) {
-        return new Response('<main><div>Yay!</div></main>', { status: 200 });
-      }
-      return null;
-    }
-    const daadmin = { fetch: mockFetch };
-
     const testYdoc = new WSSharedDoc(ydocName);
-    testYdoc.daadmin = daadmin;
-    setYDoc(ydocName, testYdoc);
+    const m = setYDoc(ydocName, testYdoc);
+
+    const connCalled = []
+    const mockConn = {
+      close() { connCalled.push('close'); }
+    };
+    testYdoc.conns.set(mockConn, 1234);
 
     const req = {
       url: `${ydocName}?api=syncAdmin`
     };
 
-    const storageCalled = [];
-    const mockStorage = { deleteAll: () => storageCalled.push('deleteAll') };
-    const dr = new DocRoom({ storage: mockStorage }, null);
+    const dr = new DocRoom({});
 
+    assert(m.has(ydocName), 'Precondition');
     const resp = await dr.fetch(req)
-
     assert.equal(200, resp.status);
-    assert(doc2aem(testYdoc).includes('Yay!'));
-    assert.deepStrictEqual(['deleteAll'], storageCalled);
+    assert(!m.has(ydocName), 'Doc should have been removed');
+    assert.deepStrictEqual(['close'], connCalled);
   });
 
   it('Unknown doc update request gives 404', async () => {
-    const storedMap = new Map();
-    storedMap.set('doc', 'anotherdoc');
-    const mockStorage = { get: async () => storedMap };
-    const dr = new DocRoom({ storage: mockStorage }, null);
+    const dr = new DocRoom({});
 
     const req = {
       url: 'http://foobar.com/a/b/d/e/f.html?api=syncAdmin'
@@ -341,18 +324,22 @@ describe('Worker test suite', () => {
       }
     }
 
-    const rooms = {
-      idFromName(nm) { return `id${hash(nm)}`; },
-      get(id) { return id === 'id1255893316' ? myRoom : null; }
-    }
-    const env = { rooms };
-
     const mockFetchCalled = [];
     const mockFetch = async (url, opts) => {
       mockFetchCalled.push({ url, opts });
       return new Response(null, { status: 200 });
     };
-    const res = await handleApiRequest(req, env, mockFetch);
+    const serviceBinding = {
+      fetch: mockFetch
+    };
+
+    const rooms = {
+      idFromName(nm) { return `id${hash(nm)}`; },
+      get(id) { return id === 'id1255893316' ? myRoom : null; }
+    }
+    const env = { rooms, daadmin: serviceBinding };
+
+    const res = await handleApiRequest(req, env);
     assert.equal(306, res.status);
 
     assert.equal(1, mockFetchCalled.length);
@@ -409,8 +396,10 @@ describe('Worker test suite', () => {
     }
 
     const mockFetch = async (url, opts) => new Response(null, {status: 401});
+    const daadmin = { fetch: mockFetch };
+    const env = { daadmin };
 
-    const res = await handleApiRequest(req, {}, mockFetch);
+    const res = await handleApiRequest(req, env);
     assert.equal(401, res.status);
   });
 

@@ -114,8 +114,6 @@ export async function handleApiRequest(request, env) {
       opts.headers = new Headers({ Authorization: auth });
     }
 
-    // eslint-disable-next-line no-console
-    console.log('Using service binding to contact da-admin');
     const initialReq = await env.daadmin.fetch(docName, opts);
 
     if (!initialReq.ok && initialReq.status !== 404) {
@@ -185,8 +183,11 @@ export class DocRoom {
     const api = url.searchParams.get('api');
     switch (api) {
       case 'deleteAdmin':
-        // delete does the same as sync
-        // eslint-disable-next-line no-fallthrough
+        if (await invalidateFromAdmin(baseURL)) {
+          return new Response(null, { status: 204 });
+        } else {
+          return new Response('Not Found', { status: 404 });
+        }
       case 'syncAdmin':
         if (await invalidateFromAdmin(baseURL)) {
           return new Response('OK', { status: 200 });
