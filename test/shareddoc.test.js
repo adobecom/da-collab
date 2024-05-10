@@ -328,9 +328,10 @@ describe('Collab Test Suite', () => {
     conns.set(conn1, new Set());
     conns.set(conn2, new Set());
 
-    const mockYDoc = { conns };
+    const testYDoc = new WSSharedDoc(docName);
+    testYDoc.conns = conns;
 
-    const m = setYDoc(docName, mockYDoc);
+    const m = setYDoc(docName, testYDoc);
 
     assert(m.has(docName), 'Precondition');
     invalidateFromAdmin(docName);

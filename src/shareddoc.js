@@ -327,7 +327,7 @@ export const messageListener = (conn, doc, message) => {
 export const invalidateFromAdmin = async (docName) => {
   const ydoc = docs.get(docName);
   if (ydoc) {
-    docs.delete(docName);
+    // As we are closing all connections, the ydoc will be removed from the docs map
     ydoc.conns.forEach((_, c) => closeConn(ydoc, c));
 
     return true;
