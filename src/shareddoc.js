@@ -202,10 +202,16 @@ export const persistence = {
     if (!restored) {
       setTimeout(() => {
         if (ydoc === docs.get(docName)) {
-          // restore from da-admin
-          aem2doc(current, ydoc);
-          // eslint-disable-next-line no-console
-          console.log('Restored from da-admin', docName);
+          const rootType = ydoc.getXmlFragment('prosemirror');
+          ydoc.transact(() => {
+            // clear document
+            rootType.delete(0, rootType.length);
+            // restore from da-admin
+            aem2doc(current, ydoc);
+
+            // eslint-disable-next-line no-console
+            console.log('Restored from da-admin', docName);
+          });
         }
       }, 1000);
     }
