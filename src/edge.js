@@ -9,7 +9,7 @@
  * OF ANY KIND, either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-import { deleteFromAdmin, invalidateFromAdmin, setupWSConnection } from './shareddoc.js';
+import { invalidateFromAdmin, setupWSConnection } from './shareddoc.js';
 
 // This is the Edge Worker, built using Durable Objects!
 
@@ -80,7 +80,7 @@ async function handleApiCall(url, request, env) {
   }
 }
 
-export async function handleApiRequest(request, env, ffetch = fetch) {
+export async function handleApiRequest(request, env) {
   // We've received at API request.
   const url = new URL(request.url);
   if (url.pathname.startsWith('/api/')) {
@@ -114,16 +114,7 @@ export async function handleApiRequest(request, env, ffetch = fetch) {
       opts.headers = new Headers({ Authorization: auth });
     }
 
-    let initialReq;
-    if (env.daadmin) {
-      // If service binding set, use that to call da-admin
-
-      // eslint-disable-next-line no-console
-      console.log('Using service binding to contact da-admin');
-      initialReq = await env.daadmin.fetch(docName, opts);
-    } else {
-      initialReq = await ffetch(docName, opts);
-    }
+    const initialReq = await env.daadmin.fetch(docName, opts);
 
     if (!initialReq.ok && initialReq.status !== 404) {
       // eslint-disable-next-line no-console
@@ -184,6 +175,7 @@ export class DocRoom {
     this.env = env;
   }
 
+  // eslint-disable-next-line class-methods-use-this
   async handleApiCall(url, request) {
     const qidx = request.url.indexOf('?');
     const baseURL = request.url.substring(0, qidx);
@@ -191,13 +183,13 @@ export class DocRoom {
     const api = url.searchParams.get('api');
     switch (api) {
       case 'deleteAdmin':
-        if (await deleteFromAdmin(baseURL, this.storage)) {
+        if (await invalidateFromAdmin(baseURL)) {
           return new Response(null, { status: 204 });
         } else {
           return new Response('Not Found', { status: 404 });
         }
       case 'syncAdmin':
-        if (await invalidateFromAdmin(baseURL, this.storage)) {
+        if (await invalidateFromAdmin(baseURL)) {
           return new Response('OK', { status: 200 });
         } else {
           return new Response('Not Found', { status: 404 });

@@ -108,19 +108,17 @@ export const storeState = async (docName, state, storage, chunkSize = MAX_STORAG
 };
 
 export const persistence = {
-  fetch: fetch.bind(this),
   closeConn: closeConn.bind(this),
   get: async (docName, auth, daadmin) => {
-    const fobj = daadmin || persistence;
     const initalOpts = {};
     if (auth) {
       initalOpts.headers = new Headers({ Authorization: auth });
     }
-    const initialReq = await fobj.fetch(docName, initalOpts);
+    const initialReq = await daadmin.fetch(docName, initalOpts);
     if (initialReq.ok) {
       return initialReq.text();
     } else if (initialReq.status === 404) {
-      return '';
+      return '<main></main>';
     } else {
       // eslint-disable-next-line no-console
       console.log(`unable to get resource: ${initialReq.status} - ${initialReq.statusText}`);
@@ -144,9 +142,7 @@ export const persistence = {
       });
     }
 
-    // Use service binding if available
-    const fobj = ydoc.daadmin || persistence;
-    const { ok, status, statusText } = await fobj.fetch(ydoc.name, opts);
+    const { ok, status, statusText } = await ydoc.daadmin.fetch(ydoc.name, opts);
 
     return {
       ok,
@@ -154,26 +150,11 @@ export const persistence = {
       statusText,
     };
   },
-  invalidate: async (ydoc, storage) => {
-    const auth = Array.from(ydoc.conns.keys())
-      .map((con) => con.auth);
-    const authHeader = auth.length > 0 ? [...new Set(auth)].join(',') : undefined;
-
-    const svrContent = await persistence.get(ydoc.name, authHeader, ydoc.daadmin);
-    const aemMap = ydoc.getMap('aem');
-    const cliContent = aemMap.get('content');
-    if (svrContent !== cliContent) {
-      // Only update the client if they're different
-      aemMap.set('svrinv', svrContent);
-      await storage.deleteAll();
-    }
-  },
   update: async (ydoc, current) => {
     let closeAll = false;
     try {
-      const content = ydoc.getMap('aem').get('content');
+      const content = doc2aem(ydoc);
       if (current !== content) {
-        console.log(`DOC2AEM: ${doc2aem(ydoc)}`);
         const { ok, status, statusText } = await persistence.put(ydoc, content);
 
         if (!ok) {
@@ -197,49 +178,53 @@ export const persistence = {
     return current;
   },
   bindState: async (docName, ydoc, conn, storage) => {
-    const persistedYdoc = new Y.Doc();
-    const aemMap = persistedYdoc.getMap('aem');
+    let current = await persistence.get(docName, conn.auth, ydoc.daadmin);
 
     let restored = false;
     try {
       const stored = await readState(docName, storage);
       if (stored && stored.length > 0) {
         Y.applyUpdate(ydoc, stored);
-        restored = true;
-        // eslint-disable-next-line no-console
-        console.log('Restored from worker persistence', docName);
+
+        const fromStorage = doc2aem(ydoc);
+        if (fromStorage === current) {
+          restored = true;
+
+          // eslint-disable-next-line no-console
+          console.log('Restored from worker persistence', docName);
+        }
       }
     } catch (error) {
       // eslint-disable-next-line no-console
       console.log('Problem restoring state from worker storage', error);
     }
 
-    let current = await persistence.get(docName, conn.auth, ydoc.daadmin);
     if (!restored) {
-      aemMap.set('initial', current);
+      setTimeout(() => {
+        if (ydoc === docs.get(docName)) {
+          const rootType = ydoc.getXmlFragment('prosemirror');
+          ydoc.transact(() => {
+            // clear document
+            rootType.delete(0, rootType.length);
+            // restore from da-admin
+            aem2doc(current, ydoc);
 
-      Y.applyUpdate(ydoc, Y.encodeStateAsUpdate(persistedYdoc));
+            // eslint-disable-next-line no-console
+            console.log('Restored from da-admin', docName);
+          });
+        }
+      }, 1000);
     }
 
-    setTimeout(() => {
-      ydoc.on('update', async () => {
-        if (!ydoc.getMap('aem').has('svrinv')) {
-          storeState(docName, Y.encodeStateAsUpdate(ydoc), storage);
-        }
-      });
-    }, 15000); // start writing the state to the worker storage after 15 secs
-    let first = true;
+    ydoc.on('update', async () => {
+      if (ydoc === docs.get(docName)) { // make sure this ydoc is still active
+        storeState(docName, Y.encodeStateAsUpdate(ydoc), storage);
+      }
+    });
+
     ydoc.on('update', debounce(async () => {
-      current = await persistence.update(ydoc, current);
-      console.log('update');
-      if (first) {
-        first = false;
-        await aem2doc(` <body>
-        <header></header>
-        <main><div><p><picture><source srcset="https://main--aem-block-collection--adobe.hlx.live/media_1dc0a2d290d791a050feb1e159746f52db392775a.jpeg?width=750&amp;format=jpeg&amp;optimize=medium"><source srcset="https://main--aem-block-collection--adobe.hlx.live/media_1dc0a2d290d791a050feb1e159746f52db392775a.jpeg?width=750&amp;format=jpeg&amp;optimize=medium" media="(min-width: 600px)"><img src="https://main--aem-block-collection--adobe.hlx.live/media_1dc0a2d290d791a050feb1e159746f52db392775a.jpeg?width=750&amp;format=jpeg&amp;optimize=medium" alt="Decorative double Helix" loading="lazy"></picture></p><h1>Congrats, you are ready to go! </h1><p>Your forked repo is setup as a helix project and you are ready to start developing.<br>The content you are looking at is served from this <a href="https://drive.google.com/drive/folders/1Gwwrujv0Z4TxJM8askdqQkHSD969dGK7">gdrive</a><br><br>Adjust the <code>fstab.yaml</code> to point to a folder either in your sharepoint or your gdrive that you shared with helix. See the full tutorial here:<br><br><a href="https://bit.ly/3aImqUL">https://www.hlx.live/tutorial</a></p><h2>This is another headline here for more content</h2><div class="columns"><div><div><p>Columns block</p><ul><li>One</li><li>Two</li><li>Three</li></ul><p><a href="/">Live</a></p></div><div><picture><source srcset="https://main--aem-block-collection--adobe.hlx.live/media_17e9dd0aae03d62b8ebe2159b154d6824ef55732d.png?width=750&amp;format=png&amp;optimize=medium"><source srcset="https://main--aem-block-collection--adobe.hlx.live/media_17e9dd0aae03d62b8ebe2159b154d6824ef55732d.png?width=750&amp;format=png&amp;optimize=medium" media="(min-width: 600px)"><img src="https://main--aem-block-collection--adobe.hlx.live/media_17e9dd0aae03d62b8ebe2159b154d6824ef55732d.png?width=750&amp;format=png&amp;optimize=medium" alt="green double Helix" loading="lazy"></picture></div></div><div><div><picture><source srcset="https://main--aem-block-collection--adobe.hlx.live/media_143cf1a441962c90f082d4f7dba2aeefb07f4e821.png?width=750&amp;format=png&amp;optimize=medium"><source srcset="https://main--aem-block-collection--adobe.hlx.live/media_143cf1a441962c90f082d4f7dba2aeefb07f4e821.png?width=750&amp;format=png&amp;optimize=medium" media="(min-width: 600px)"><img src="https://main--aem-block-collection--adobe.hlx.live/media_143cf1a441962c90f082d4f7dba2aeefb07f4e821.png?width=750&amp;format=png&amp;optimize=medium" alt="Yellow Double Helix" loading="lazy"></picture></div><div><p>Or you can just view the preview</p><p><a href="/"><em>Preview</em></a></p></div></div></div></div><div><h2>Boilerplate Highlights?</h2><p>Find some of our favorite staff picks below:</p><div class="cards"><div><div><picture><source srcset="https://main--aem-block-collection--adobe.hlx.live/media_16582eee85490fbfe6b27c6a92724a81646c2e649.jpeg?width=750&amp;format=jpeg&amp;optimize=medium"><source srcset="https://main--aem-block-collection--adobe.hlx.live/media_16582eee85490fbfe6b27c6a92724a81646c2e649.jpeg?width=750&amp;format=jpeg&amp;optimize=medium" media="(min-width: 600px)"><img src="https://main--aem-block-collection--adobe.hlx.live/media_16582eee85490fbfe6b27c6a92724a81646c2e649.jpeg?width=750&amp;format=jpeg&amp;optimize=medium" alt="A fast-moving Tunnel" loading="lazy"></picture></div><div><p><strong>Unmatched speed</strong></p><p>Helix is the fastest way to publish, create, and serve websites</p></div></div><div><div><picture><source srcset="https://main--aem-block-collection--adobe.hlx.live/media_17a5ca5faf60fa6486a1476fce82a3aa606000c81.jpeg?width=750&amp;format=jpeg&amp;optimize=medium"><source srcset="https://main--aem-block-collection--adobe.hlx.live/media_17a5ca5faf60fa6486a1476fce82a3aa606000c81.jpeg?width=750&amp;format=jpeg&amp;optimize=medium" media="(min-width: 600px)"><img src="https://main--aem-block-collection--adobe.hlx.live/media_17a5ca5faf60fa6486a1476fce82a3aa606000c81.jpeg?width=750&amp;format=jpeg&amp;optimize=medium" alt="An iceberg" loading="lazy"></picture></div><div><p><strong>Content at scale</strong></p><p>Helix allows you to publish more content in shorter time with smaller teams</p></div></div><div><div><picture><source srcset="https://main--aem-block-collection--adobe.hlx.live/media_162cf9431ac2dfd17fe7bf4420525bbffb9d0ccfe.jpeg?width=750&amp;format=jpeg&amp;optimize=medium"><source srcset="https://main--aem-block-collection--adobe.hlx.live/media_162cf9431ac2dfd17fe7bf4420525bbffb9d0ccfe.jpeg?width=750&amp;format=jpeg&amp;optimize=medium" media="(min-width: 600px)"><img src="https://main--aem-block-collection--adobe.hlx.live/media_162cf9431ac2dfd17fe7bf4420525bbffb9d0ccfe.jpeg?width=750&amp;format=jpeg&amp;optimize=medium" alt="Doors with light in the dark" loading="lazy"></picture></div><div><p><strong>Uncertainty eliminated</strong></p><p>Preview content at 100% fidelity, get predictable content velocity, and shorten project durations</p></div></div><div><div><picture><source srcset="https://main--aem-block-collection--adobe.hlx.live/media_136fdd3174ff44787179448cc2e0264af1b02ade9.jpeg?width=750&amp;format=jpeg&amp;optimize=medium"><source srcset="https://main--aem-block-collection--adobe.hlx.live/media_136fdd3174ff44787179448cc2e0264af1b02ade9.jpeg?width=750&amp;format=jpeg&amp;optimize=medium" media="(min-width: 600px)"><img src="https://main--aem-block-collection--adobe.hlx.live/media_136fdd3174ff44787179448cc2e0264af1b02ade9.jpeg?width=750&amp;format=jpeg&amp;optimize=medium" alt="A group of people around a Table" loading="lazy"></picture></div><div><p><strong>Widen the talent pool</strong></p><p>Authors on Helix use Microsoft Word, Excel or Google Docs and need no training</p></div></div><div><div><picture><source srcset="https://main--aem-block-collection--adobe.hlx.live/media_1cae8484004513f76c6bf5860375bc020d099a6d6.jpeg?width=750&amp;format=jpeg&amp;optimize=medium"><source srcset="https://main--aem-block-collection--adobe.hlx.live/media_1cae8484004513f76c6bf5860375bc020d099a6d6.jpeg?width=750&amp;format=jpeg&amp;optimize=medium" media="(min-width: 600px)"><img src="https://main--aem-block-collection--adobe.hlx.live/media_1cae8484004513f76c6bf5860375bc020d099a6d6.jpeg?width=750&amp;format=jpeg&amp;optimize=medium" alt="HTML code in a code editor" loading="lazy"></picture></div><div><p><strong>The low-code way to developer productivity</strong></p><p>Say goodbye to complex APIs spanning multiple languages. Anyone with a little bit of HTML, CSS, and JS can build a site on Project Helix.</p></div></div><div><div><picture><source srcset="https://main--aem-block-collection--adobe.hlx.live/media_11381226cb58caf1f0792ea27abebbc8569b00aeb.jpeg?width=750&amp;format=jpeg&amp;optimize=medium"><source srcset="https://main--aem-block-collection--adobe.hlx.live/media_11381226cb58caf1f0792ea27abebbc8569b00aeb.jpeg?width=750&amp;format=jpeg&amp;optimize=medium" media="(min-width: 600px)"><img src="https://main--aem-block-collection--adobe.hlx.live/media_11381226cb58caf1f0792ea27abebbc8569b00aeb.jpeg?width=750&amp;format=jpeg&amp;optimize=medium" alt="A rocket and a headless suit" loading="lazy"></picture></div><div><p><strong>Headless is here</strong></p><p>Go directly from Microsoft Excel or Google Sheets to the web in mere seconds. Sanitize and collect form data at extreme scale with Project Helix Forms.</p></div></div><div><div><picture><source srcset="https://main--aem-block-collection--adobe.hlx.live/media_18fadeb136e84a2efe384b782e8aea6e92de4fc13.jpeg?width=750&amp;format=jpeg&amp;optimize=medium"><source srcset="https://main--aem-block-collection--adobe.hlx.live/media_18fadeb136e84a2efe384b782e8aea6e92de4fc13.jpeg?width=750&amp;format=jpeg&amp;optimize=medium" media="(min-width: 600px)"><img src="https://main--aem-block-collection--adobe.hlx.live/media_18fadeb136e84a2efe384b782e8aea6e92de4fc13.jpeg?width=750&amp;format=jpeg&amp;optimize=medium" alt="A dial with a hand on it" loading="lazy"></picture></div><div><p><strong>Peak performance</strong></p><p>Use Project Helix's serverless architecture to meet any traffic need. Use Project Helix's PageSpeed Insights Github action to evaluate every Pull-Request for Lighthouse Score.</p></div></div></div><p><br></p><div class="section-metadata"><div><div><p>Style</p></div><div><p>highlight</p></div></div></div></div><div><div class="metadata"><div><div><p>Title</p></div><div><p>Home | Helix Project Boilerplate</p></div></div><div><div><p>Image</p></div><div><picture><source srcset="https://main--aem-block-collection--adobe.hlx.live/media_1dc0a2d290d791a050feb1e159746f52db392775a.jpeg?width=1200&amp;format=pjpg&amp;optimize=medium"><source srcset="https://main--aem-block-collection--adobe.hlx.live/media_1dc0a2d290d791a050feb1e159746f52db392775a.jpeg?width=1200&amp;format=pjpg&amp;optimize=medium" media="(min-width: 600px)"><img src="https://main--aem-block-collection--adobe.hlx.live/media_1dc0a2d290d791a050feb1e159746f52db392775a.jpeg?width=1200&amp;format=pjpg&amp;optimize=medium" loading="lazy"></picture></div></div><div><div><p>Description</p></div><div><p>Use this template repository as the starting point for new Helix projects.</p></div></div></div></div></main>
-        <footer></footer>
-      </body>
-  `, ydoc);
+      if (ydoc === docs.get(docName)) {
+        current = await persistence.update(ydoc, current);
       }
     }, 2000, 10000));
   },
@@ -289,60 +274,6 @@ export class WSSharedDoc extends Y.Doc {
   }
 }
 
-export function wait(milliseconds) {
-  return new Promise((r) => {
-    setTimeout(r, milliseconds);
-  });
-}
-
-/* Get a promise that resolves when the document is bound to persistence.
-   Multiple clients may be looking for the same document, but they should all
-   wait using it until it's bound to the persistence.
-
-   The first request here will create a promise that resolves when bindState
-   has completed. This promise is also stored on the doc.promise field and is
-   passed in on later calls on this doc as the existingPromise.
-   On subsequent if there is already an existingPromise, then wait on that same
-   promise. However if the promise hasn't resolved yet
-   or there is no content in the doc, then wait for 500 ms to avoid all clients
-   from getting connected at exactly the same time, which can result in editor
-   content being duplicated. The promise is then replaced with a new promise that
-   has the wait included. Subsequent calls will add a further wait and so on.
-   Once the persistence is bound and the document has content, the same promise
-   is returned, but that one is already resolved so it's available immediately.
- */
-export const getBindPromise = async (
-  docName,
-  doc,
-  conn,
-  existingPromise,
-  storage,
-  fnWait = wait,
-) => {
-  if (existingPromise) {
-    const hasContent = doc.getMap('aem')?.has('content');
-    if (doc.boundState && hasContent) {
-      // eslint-disable-next-line no-param-reassign
-      delete doc.promiseParties;
-      return existingPromise;
-    } else {
-      if (!doc.promiseParties) {
-        // eslint-disable-next-line no-param-reassign
-        doc.promiseParties = [];
-      }
-      doc.promiseParties.push('true'); // wait extra for each interested party
-      await fnWait(doc.promiseParties.length * 500);
-      return existingPromise;
-    }
-  } else {
-    return persistence.bindState(docName, doc, conn, storage)
-      .then(() => {
-        // eslint-disable-next-line no-param-reassign
-        doc.boundState = true;
-      });
-  }
-};
-
 export const getYDoc = async (docname, conn, env, storage, gc = true) => {
   let doc = docs.get(docname);
   if (doc === undefined) {
@@ -354,8 +285,11 @@ export const getYDoc = async (docname, conn, env, storage, gc = true) => {
   if (!doc.conns.get(conn)) {
     doc.conns.set(conn, new Set());
   }
+
   doc.daadmin = env.daadmin;
-  doc.promise = getBindPromise(docname, doc, conn, doc.promise, storage);
+  if (!doc.promise) {
+    doc.promise = persistence.bindState(docname, doc, conn, storage);
+  }
 
   await doc.promise;
   return doc;
@@ -396,41 +330,13 @@ export const messageListener = (conn, doc, message) => {
   }
 };
 
-export const deleteFromAdmin = async (docName, storage) => {
+export const invalidateFromAdmin = async (docName) => {
   const ydoc = docs.get(docName);
   if (ydoc) {
-    // If we still have the ydoc, set it to be empty.
-    // Note that it needs to contain at least one character to be picked up
-    // so setting it to a space.
-    ydoc.getMap('aem').set('svrinv', ' ');
-  }
+    // As we are closing all connections, the ydoc will be removed from the docs map
+    ydoc.conns.forEach((_, c) => closeConn(ydoc, c));
 
-  const keys = await storage.get(['docstore', 'chunks', 'doc']);
-  const storedDoc = keys.get('doc');
-  if (storedDoc && storedDoc !== docName) {
-    // eslint-disable-next-line no-console
-    console.log('Mismatch between requested and found doc. Requested', docName, 'found', keys.get('doc'));
-    return false;
-  }
-
-  // eslint-disable-next-line no-console
-  console.log(
-    'Deleting storage for',
-    docName,
-    'containing',
-    keys.has('docstore') ? 'docstore' : `keys=${keys.chunks}`,
-  );
-  await storage.deleteAll();
-  return true;
-};
-
-export const invalidateFromAdmin = async (docName, storage) => {
-  const ydoc = docs.get(docName);
-  if (ydoc) {
-    await persistence.invalidate(ydoc, storage);
     return true;
-  } else {
-    deleteFromAdmin(docName, storage);
   }
   return false;
 };

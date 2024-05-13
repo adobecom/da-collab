@@ -191,7 +191,7 @@ export function aem2doc(html, ydoc) {
       return Reflect.get(target, prop);
     },
   };
-  const json = DOMParser.fromSchema(getSchema()).parse(new Proxy(tree, handler2));
+  const json = DOMParser.fromSchema(getSchema()).parse(new Proxy(main, handler2));
   prosemirrorToYXmlFragment(json, ydoc.getXmlFragment('prosemirror'));
 }
 
