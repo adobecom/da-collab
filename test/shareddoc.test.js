@@ -293,8 +293,8 @@ describe('Collab Test Suite', () => {
     const mockYDoc = {
       conns: new Map().set('foo', 'bar'),
       name: 'http://foo.bar/0/123.html',
-      getMap(nm) { return nm === 'aem' ? docMap : null },
-      emit: () => {},
+      getMap(nm) { return nm === 'error' ? new Map() : null },
+      transact: (f) => f(),
     };
 
     let called = false;
