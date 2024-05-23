@@ -78,7 +78,10 @@ export const readState = async (docName, storage) => {
   const data = [];
   for (let i = 0; i < stored.get('chunks'); i += 1) {
     const chunk = stored.get(`chunk_${i}`);
-    data.push(...chunk);
+
+    for (let j = 0; j < chunk.length; j += 1) {
+      data.push(chunk[j]);
+    }
   }
   return new Uint8Array(data);
 };
