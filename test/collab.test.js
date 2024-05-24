@@ -137,6 +137,36 @@ const result = doc2aem(yDoc);
 console.log(result);
 assert.equal(result, html);
 });
+
+  it('Test regional edits', async () => {
+    const html = `
+<body>
+  <header></header>
+  <main><div><da-loc-deleted contenteditable="false"><h1>Deleted H1 Here</h1></da-loc-deleted><da-loc-added contenteditable="false"><h1>Added H1 Here</h1></da-loc-added></div></main>
+  <footer></footer>
+</body>
+`;
+    const yDoc = new Y.Doc();
+    aem2doc(html, yDoc);
+    const result = doc2aem(yDoc);
+    console.log(result);
+    assert.equal(result, html);
+  });
+
+  it('Test superscript and subscript', async () => {
+    const html = `
+<body>
+  <header></header>
+  <main><div><p>Hello <sup>Karl</sup></p><p>And here is <sub>subscript</sub></p><p>Done</p></div></main>
+  <footer></footer>
+</body>
+`;
+    const yDoc = new Y.Doc();
+    aem2doc(html, yDoc);
+    const result = doc2aem(yDoc);
+    console.log(result);
+    assert.equal(result, html);
+  });
 });
 
 
