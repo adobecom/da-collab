@@ -74,6 +74,8 @@ function addCustomMarks(marks) {
     .addToEnd('contextHighlightingMark', contextHighlight);
 }
 
+// Note: until getSchema() is separated in its own module, this function needs to be kept in-sync
+// with the getSchema() function in da-live blocks/edit/prose/index.js
 function getSchema() {
   const { marks, nodes: baseNodes } = baseSchema.spec;
   const withLocNodes = addLocNodes(baseNodes);
