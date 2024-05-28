@@ -554,6 +554,42 @@ describe('Collab Test Suite', () => {
     }
   });
 
+  it('test bind to new doc doesnt set empty server content', async () => {
+    const docName = 'https://admin.da.live/source/foo.html';
+
+    const serviceBinding = {
+      fetch: async (u) => {
+        if (u === docName) {
+          return { status: 404 };
+        }
+      }
+    };
+
+    const ydoc = new Y.Doc();
+    ydoc.daadmin = serviceBinding;
+    setYDoc(docName, ydoc);
+    const conn = {};
+    const storage = {
+      list: async () => new Map(),
+    };
+
+    const setTimeoutCalled = [];
+    const savedSetTimeout = globalThis.setTimeout;
+    try {
+      globalThis.setTimeout = (f) => {
+        // Restore the global function
+        globalThis.setTimeout = savedSetTimeout;
+        setTimeoutCalled.push('setTimeout');
+        f();
+      };
+
+      await persistence.bindState(docName, ydoc, conn, storage);
+      assert.equal(0, setTimeoutCalled.length, 'SetTimeout should not have been called');
+    } finally {
+      globalThis.setTimeout = savedSetTimeout;
+    }
+  });
+
   it('test persist state in worker storage on update', async () => {
     const docName = 'https://admin.da.live/source/foo/bar.html';
 
