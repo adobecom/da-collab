@@ -19,19 +19,27 @@
   "author": "",
   "license": "Apache-2.0",
   "devDependencies": {
+    "@adobe/eslint-config-helix": "2.0.6",
     "c8": "^9.1.0",
+    "eslint": "8.56.0",
+    "esmock": "^2.6.4",
     "mocha": "^10.2.0",
     "mocha-junit-reporter": "^2.2.1",
     "mocha-multi-reporters": "^1.5.1",
-    "@adobe/eslint-config-helix": "2.0.6",
-    "eslint": "8.56.0",
-    "esmock": "^2.6.4",
-    "wrangler": "^3.22.4"
+    "wrangler": "^3.53.1"
   },
   "dependencies": {
     "lib0": "^0.2.52",
+    "hast-util-from-html": "^2.0.1",
+    "hast-util-select": "^6.0.2",
     "lodash": "^4.17.21",
+    "prosemirror-model": "^1.19.0",
+    "prosemirror-schema-basic": "^1.2.1",
+    "prosemirror-schema-list": "^1.3.0",
+    "prosemirror-state": "^1.4.2",
+    "prosemirror-tables": "^1.3.2",
     "ws": "^6.2.1",
+    "y-prosemirror": "^1.2.3",
     "y-protocols": "^1.0.5",
     "yjs": "^13.5.0"
   }
