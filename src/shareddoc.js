@@ -78,7 +78,10 @@ export const readState = async (docName, storage) => {
   const data = [];
   for (let i = 0; i < stored.get('chunks'); i += 1) {
     const chunk = stored.get(`chunk_${i}`);
-    data.push(...chunk);
+
+    for (let j = 0; j < chunk.length; j += 1) {
+      data.push(chunk[j]);
+    }
   }
   return new Uint8Array(data);
 };
@@ -351,12 +354,17 @@ export const messageListener = (conn, doc, message) => {
 };
 
 export const invalidateFromAdmin = async (docName) => {
+  // eslint-disable-next-line no-console
+  console.log('Invalidate from Admin received', docName);
   const ydoc = docs.get(docName);
   if (ydoc) {
     // As we are closing all connections, the ydoc will be removed from the docs map
     ydoc.conns.forEach((_, c) => closeConn(ydoc, c));
 
     return true;
+  } else {
+    // eslint-disable-next-line no-console
+    console.log('Document not found', docName);
   }
   return false;
 };
