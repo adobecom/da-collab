@@ -26,6 +26,7 @@ const gcEnabled = false;
 
 const docs = new Map();
 
+const EMPTY_DOC = '<main></main>';
 const messageSync = 0;
 const messageAwareness = 1;
 const MAX_STORAGE_KEYS = 128;
@@ -121,7 +122,7 @@ export const persistence = {
     if (initialReq.ok) {
       return initialReq.text();
     } else if (initialReq.status === 404) {
-      return '<main></main>';
+      return EMPTY_DOC;
     } else {
       // eslint-disable-next-line no-console
       console.log(`unable to get resource: ${initialReq.status} - ${initialReq.statusText}`);
@@ -196,6 +197,10 @@ export const persistence = {
           // eslint-disable-next-line no-console
           console.log('Restored from worker persistence', docName);
         }
+      } else if (current === EMPTY_DOC) {
+        // There is no stored state and the document is empty, which means
+        // we have a new doc here, which doesn't need to be restored from da-admin
+        restored = true;
       }
     } catch (error) {
       // eslint-disable-next-line no-console
@@ -229,7 +234,7 @@ export const persistence = {
       if (ydoc === docs.get(docName)) {
         current = await persistence.update(ydoc, current);
       }
-    }, 2000, 10000));
+    }, 2000, { maxWait: 10000 }));
   },
 };
 
