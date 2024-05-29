@@ -15,7 +15,7 @@ import esmock from 'esmock';
 
 import {
   closeConn, getYDoc, invalidateFromAdmin, messageListener, persistence,
-  readState, setupWSConnection, setYDoc, storeState, updateHandler, WSSharedDoc,
+  readState, setupWSConnection, setYDoc, showError, storeState, updateHandler, WSSharedDoc,
 } from '../src/shareddoc.js';
 import { aem2doc, doc2aem } from '../src/collab.js';
 
@@ -293,8 +293,8 @@ describe('Collab Test Suite', () => {
     const mockYDoc = {
       conns: new Map().set('foo', 'bar'),
       name: 'http://foo.bar/0/123.html',
-      getMap(nm) { return nm === 'aem' ? docMap : null },
-      emit: () => {},
+      getMap(nm) { return nm === 'error' ? new Map() : null },
+      transact: (f) => f(),
     };
 
     let called = false;
@@ -960,4 +960,25 @@ describe('Collab Test Suite', () => {
     assert.deepStrictEqual(new Uint8Array([5, 6, 7, 8]), called[1].chunk_1);
     assert.deepStrictEqual(new Uint8Array([9]), called[1].chunk_2);
   });
+
+  it('Test showError', () => {
+    const errorMap = new Map();
+    const called = [];
+    const mockYDoc = {
+      getMap(nm) { return nm === 'error' ? errorMap : null; },
+      transact(f) {
+        called.push('transact');
+        f();
+      }
+    };
+
+    let error = new Error('foo');
+
+    showError(mockYDoc, error);
+    assert.equal('foo', errorMap.get('message'));
+    assert(errorMap.get('timestamp') > 0);
+    assert(errorMap.get('stack').includes('shareddoc.test.js'),
+      'The stack trace should contain the name of this test file');
+    assert.deepStrictEqual(['transact'], called);
+  })
 });

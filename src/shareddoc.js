@@ -111,6 +111,17 @@ export const storeState = async (docName, state, storage, chunkSize = MAX_STORAG
   await storage.put(serialized);
 };
 
+export const showError = (ydoc, err) => {
+  const em = ydoc.getMap('error');
+
+  // Perform the change in a transaction to avoid seeing a partial error
+  ydoc.transact(() => {
+    em.set('timestamp', Date.now());
+    em.set('message', err.message);
+    em.set('stack', err.stack);
+  });
+};
+
 export const persistence = {
   closeConn: closeConn.bind(this),
   get: async (docName, auth, daadmin) => {
@@ -167,12 +178,13 @@ export const persistence = {
         }
         // eslint-disable-next-line no-console
         console.log(content);
+
         return content;
       }
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error(err);
-      ydoc.emit('error', [err]);
+      showError(ydoc, err);
     }
     if (closeAll) {
       // We had an unauthorized from da-admin - lets reset the connections
@@ -182,10 +194,11 @@ export const persistence = {
     return current;
   },
   bindState: async (docName, ydoc, conn, storage) => {
-    let current = await persistence.get(docName, conn.auth, ydoc.daadmin);
-
+    let current;
     let restored = false;
     try {
+      current = await persistence.get(docName, conn.auth, ydoc.daadmin);
+
       const stored = await readState(docName, storage);
       if (stored && stored.length > 0) {
         Y.applyUpdate(ydoc, stored);
@@ -205,6 +218,7 @@ export const persistence = {
     } catch (error) {
       // eslint-disable-next-line no-console
       console.log('Problem restoring state from worker storage', error);
+      showError(ydoc, error);
     }
 
     if (!restored) {
@@ -212,13 +226,19 @@ export const persistence = {
         if (ydoc === docs.get(docName)) {
           const rootType = ydoc.getXmlFragment('prosemirror');
           ydoc.transact(() => {
-            // clear document
-            rootType.delete(0, rootType.length);
-            // restore from da-admin
-            aem2doc(current, ydoc);
+            try {
+              // clear document
+              rootType.delete(0, rootType.length);
+              // restore from da-admin
+              aem2doc(current, ydoc);
 
-            // eslint-disable-next-line no-console
-            console.log('Restored from da-admin', docName);
+              // eslint-disable-next-line no-console
+              console.log('Restored from da-admin', docName);
+            } catch (error) {
+              // eslint-disable-next-line no-console
+              console.log('Problem restoring state from da-admin', error);
+              showError(ydoc, error);
+            }
           });
         }
       }, 1000);
@@ -334,11 +354,12 @@ export const messageListener = (conn, doc, message) => {
   } catch (err) {
     // eslint-disable-next-line no-console
     console.error(err);
-    doc.emit('error', [err]);
+    showError(doc, err);
   }
 };
 
 export const invalidateFromAdmin = async (docName) => {
+  // eslint-disable-next-line no-console
   console.log('Invalidate from Admin received', docName);
   const ydoc = docs.get(docName);
   if (ydoc) {
@@ -347,6 +368,7 @@ export const invalidateFromAdmin = async (docName) => {
 
     return true;
   } else {
+    // eslint-disable-next-line no-console
     console.log('Document not found', docName);
   }
   return false;
