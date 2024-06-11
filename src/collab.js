@@ -99,6 +99,53 @@ function convertSectionBreak(node) {
   }
 }
 
+function blockToTable(child, children) {
+  children.push({
+    type: 'element', tagName: 'p', children: [], properties: {},
+  });
+  const classes = Array.from(child.properties.className);
+  const name = classes.shift();
+  const blockName = classes.length > 0 ? `${name} (${classes.join(', ')})` : name;
+  const rows = [...child.children];
+  const maxCols = rows.reduce((cols, row) => (
+    row.children?.length > cols ? row.children?.length : cols), 0);
+
+  const table = {
+    type: 'element', tagName: 'table', children: [], properties: {},
+  };
+  children.push(table);
+  const headerRow = {
+    type: 'element', tagName: 'tr', children: [], properties: {},
+  };
+
+  const td = {
+    type: 'element', tagName: 'td', children: [{ type: 'text', value: blockName }], properties: { colspan: maxCols },
+  };
+
+  headerRow.children.push(td);
+  table.children.push(headerRow);
+  rows.filter((row) => row.tagName === 'div').forEach((row) => {
+    const tr = {
+      type: 'element', tagName: 'tr', children: [], properties: {},
+    };
+    const cells = (row.children ? [...row.children] : [row]).filter((cell) => cell.type !== 'text' || (cell.value && cell.value.trim() !== '\n' && cell.value.trim() !== ''));
+    cells.forEach((cell, idx) => {
+      const tdi = {
+        type: 'element', tagName: 'td', children: [], properties: {},
+      };
+      if (cells.length < maxCols && idx === cells.length - 1) {
+        tdi.properties.colspan = maxCols - idx;
+      }
+      tdi.children.push(cells[idx]);
+      tr.children.push(tdi);
+    });
+    table.children.push(tr);
+  });
+  children.push({
+    type: 'element', tagName: 'p', children: [], properties: {},
+  });
+}
+
 export function aem2doc(html, ydoc) {
   const tree = fromHtml(html, { fragment: true });
   const main = tree.children.find((child) => child.tagName === 'main');
@@ -109,50 +156,20 @@ export function aem2doc(html, ydoc) {
       parent.children.forEach((child) => {
         if (child.tagName === 'div' && child.properties.className?.length > 0) {
           modified = true;
-          children.push({
-            type: 'element', tagName: 'p', children: [], properties: {},
+          blockToTable(child, children);
+        } else if (child.tagName === 'da-loc-deleted' || child.tagName === 'da-loc-added') {
+          modified = true;
+          const locChildren = [];
+          child.children.forEach((locChild) => {
+            if (locChild.tagName === 'div' && locChild.properties.className?.length > 0) {
+              blockToTable(locChild, locChildren);
+            } else {
+              locChildren.push(locChild);
+            }
           });
-          const classes = Array.from(child.properties.className);
-          const name = classes.shift();
-          const blockName = classes.length > 0 ? `${name} (${classes.join(', ')})` : name;
-          const rows = [...child.children];
-          const maxCols = rows.reduce((cols, row) => (
-            row.children?.length > cols ? row.children?.length : cols), 0);
-
-          const table = {
-            type: 'element', tagName: 'table', children: [], properties: {},
-          };
-          children.push(table);
-          const headerRow = {
-            type: 'element', tagName: 'tr', children: [], properties: {},
-          };
-
-          const td = {
-            type: 'element', tagName: 'td', children: [{ type: 'text', value: blockName }], properties: { colspan: maxCols },
-          };
-
-          headerRow.children.push(td);
-          table.children.push(headerRow);
-          rows.filter((row) => row.tagName === 'div').forEach((row) => {
-            const tr = {
-              type: 'element', tagName: 'tr', children: [], properties: {},
-            };
-            const cells = (row.children ? [...row.children] : [row]).filter((cell) => cell.type !== 'text' || (cell.value && cell.value.trim() !== '\n' && cell.value.trim() !== ''));
-            cells.forEach((cell, idx) => {
-              const tdi = {
-                type: 'element', tagName: 'td', children: [], properties: {},
-              };
-              if (cells.length < maxCols && idx === cells.length - 1) {
-                tdi.properties.colspan = maxCols - idx;
-              }
-              tdi.children.push(cells[idx]);
-              tr.children.push(tdi);
-            });
-            table.children.push(tr);
-          });
-          children.push({
-            type: 'element', tagName: 'p', children: [], properties: {},
-          });
+          // eslint-disable-next-line no-param-reassign
+          child.children = locChildren;
+          children.push(child);
         } else {
           children.push(child);
         }
@@ -303,6 +320,21 @@ function toBlockCSSClassNames(text) {
     .filter((name) => !!name);
 }
 
+function tableToBlock(child, fragment) {
+  const rows = child.children[0].children;
+  const nameRow = rows.shift();
+  const className = toBlockCSSClassNames(nameRow.children[0].children[0].children[0].text).join(' ');
+  const block = { type: 'div', attributes: { class: className }, children: [] };
+  fragment.children.push(block);
+  rows.forEach((row) => {
+    const div = { type: 'div', attributes: {}, children: [] };
+    block.children.push(div);
+    row.children.forEach((col) => {
+      div.children.push({ type: 'div', attributes: {}, children: col.children });
+    });
+  });
+}
+
 export function doc2aem(ydoc) {
   const schema = getSchema();
   const json = yDocToProsemirror(schema, ydoc);
@@ -340,18 +372,21 @@ export function doc2aem(ydoc) {
   fragment.children = [];
   children.forEach((child) => {
     if (child.type === 'table') {
-      const rows = child.children[0].children;
-      const nameRow = rows.shift();
-      const className = toBlockCSSClassNames(nameRow.children[0].children[0].children[0].text).join(' ');
-      const block = { type: 'div', attributes: { class: className }, children: [] };
-      fragment.children.push(block);
-      rows.forEach((row) => {
-        const div = { type: 'div', attributes: {}, children: [] };
-        block.children.push(div);
-        row.children.forEach((col) => {
-          div.children.push({ type: 'div', attributes: {}, children: col.children });
-        });
+      tableToBlock(child, fragment);
+    } else if (child.type === 'da-loc-deleted' || child.type === 'da-loc-added') {
+      // eslint-disable-next-line no-param-reassign
+      delete child.attributes.contenteditable;
+      const locChildren = child.children;
+      // eslint-disable-next-line no-param-reassign
+      child.children = [];
+      locChildren.forEach((locChild) => {
+        if (locChild.type === 'table') {
+          tableToBlock(locChild, child);
+        } else {
+          child.children.push(locChild);
+        }
       });
+      fragment.children.push(child);
     } else {
       fragment.children.push(child);
     }
