@@ -157,7 +157,7 @@ assert.equal(result, html);
     assert.equal(result, html);
   });
 
-  it.only('Test regional edit table parsing', async () => {
+  it('Test regional edit table parsing', async () => {
     const html = readFileSync('./test/mocks/regional-edit-1.html', 'utf-8');
     const yDoc = new Y.Doc();
     aem2doc(html, yDoc);

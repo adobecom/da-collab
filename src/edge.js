@@ -41,7 +41,8 @@ export async function handleErrors(request, func) {
     return new Response(err.stack, { status: 500 });
   }
 }
-
+// Admin APIs are forwarded to the durable object. They need the doc name as a query
+// parameter on the url.
 async function adminAPI(api, url, request, env) {
   const doc = url.searchParams.get('doc');
   if (!doc) {
@@ -56,6 +57,7 @@ async function adminAPI(api, url, request, env) {
   return roomObject.fetch(new URL(`${doc}?api=${api}`));
 }
 
+// A simple Ping API to check that the worker responds.
 function ping(env) {
   const adminsb = env.daadmin !== undefined ? '"da-admin"' : '';
 
@@ -67,6 +69,15 @@ function ping(env) {
   return new Response(json, { status: 200 });
 }
 
+/** Handle the API calls. Supported API calls right now are:
+ * /ping - returns a simple JSON response to check that the worker is up.
+ * /syncadmin - sync the doc state with the state of da-admin. Any internal state
+ *              for this document in the worker is cleared.
+ * /deleteadmin - the document is deleted and should be removed from the worker internal state.
+ * @param {URL} url - The request url
+ * @param {Request} request - The request object
+ * @param {Object} env - The worker environment
+ */
 async function handleApiCall(url, request, env) {
   switch (url.pathname) {
     case '/api/v1/ping':
@@ -80,8 +91,10 @@ async function handleApiCall(url, request, env) {
   }
 }
 
+// This is where the requests for the worker come in. They can either be pure API requests or
+// requests to set up a session with a Durable Object through a Yjs WebSocket.
 export async function handleApiRequest(request, env) {
-  // We've received at API request.
+  // We've received a pure API request - handle it and return.
   const url = new URL(request.url);
   if (url.pathname.startsWith('/api/')) {
     return handleApiCall(url, request, env);
@@ -146,13 +159,14 @@ export async function handleApiRequest(request, env) {
     headers.push(['Authorization', auth]);
   }
   const req = new Request(new URL(docName), { headers });
-  // Send the request to the object. The `fetch()` method of a Durable Object stub has the
+  // Send the request to the Durable Object. The `fetch()` method of a Durable Object stub has the
   // same signature as the global `fetch()` function, but the request is always sent to the
-  // object, regardless of the request's URL.
+  // object, regardless of the hostname in the request's URL.
   return roomObject.fetch(req);
 }
 
 // In modules-syntax workers, we use `export default` to export our script's main event handlers.
+// This is the main entry point for the worker.
 export default {
   async fetch(request, env) {
     return handleErrors(request, async () => handleApiRequest(request, env));
@@ -175,6 +189,9 @@ export class DocRoom {
     this.env = env;
   }
 
+  // Handle the API calls. Supported API calls right now are to sync the doc with the da-admin
+  // state or to indicate that the document has been deleted from da-admin.
+  // The implementation of these two is currently identical.
   // eslint-disable-next-line class-methods-use-this
   async handleApiCall(url, request) {
     const qidx = request.url.indexOf('?');
@@ -214,10 +231,13 @@ export class DocRoom {
   // allowed by the runtime, so we can set an alternative 'success' code here for testing.
   async fetch(request, _opts, successCode = 101) {
     const url = new URL(request.url);
+
+    // If it's a pure API call then handle it and return.
     if (url.search.startsWith('?api=')) {
       return this.handleApiCall(url, request);
     }
 
+    // If we get here, we're expecting this to be a WebSocket request.
     if (request.headers.get('Upgrade') !== 'websocket') {
       return new Response('expected websocket', { status: 400 });
     }
@@ -242,8 +262,12 @@ export class DocRoom {
     return new Response(null, { status: successCode, webSocket: pair[0] });
   }
 
-  // handleSession() implements our WebSocket-based protocol.
-  // eslint-disable-next-line class-methods-use-this
+  /**
+   * Implements our WebSocket-based protocol.
+   * @param {WebSocket} webSocket - The WebSocket connection to the client
+   * @param {string} docName - The document name
+   * @param {string} auth - The authorization header
+   */
   async handleSession(webSocket, docName, auth) {
     // Accept our end of the WebSocket. This tells the runtime that we'll be terminating the
     // WebSocket in JavaScript, not sending it elsewhere.
