@@ -297,7 +297,9 @@ export const persistence = {
     }
 
     if (!restored) {
-      // If we weren't able to restore from worker storage, restore from da-admin
+      // The doc was not restored from worker persistence, so read it from da-admin,
+      // but do this async to give the ydoc some time to get synced up first. Without
+      // this timeout, the ydoc can get confused which may result in duplicated content.
       setTimeout(() => {
         if (ydoc === docs.get(docName)) {
           const rootType = ydoc.getXmlFragment('prosemirror');
