@@ -171,7 +171,7 @@ describe('Collab Test Suite', () => {
       return { ok: false, text: async () => { throw new Error(); }, status: 404, statusText: 'Not Found' };
     };
     const result = await persistence.get('foo', 'auth', daadmin);
-    assert.equal(result, '<main></main>');
+    assert.equal(result, null);
   });
 
   it('Test persistence get throws', async () => {
@@ -430,6 +430,55 @@ describe('Collab Test Suite', () => {
     assert.equal(testYDoc, aem2DocCalled[1]);
   }).timeout(5000);
 
+  it('Test bindState gets empty doc on da-admin 404', async() => {
+    const mockdebounce = (f) => async () => await f();
+    const pss = await esmock(
+      '../src/shareddoc.js', {
+        'lodash/debounce.js': {
+          default: mockdebounce
+        }
+      });
+
+    const docName = 'http://foobar.com/mydoc.html';
+
+    const ydocUpdateCB = [];
+    const testYDoc = new Y.Doc();
+    testYDoc.on = (ev, f) => { if (ev === 'update') ydocUpdateCB.push(f); }
+    pss.setYDoc(docName, testYDoc);
+
+    const called = []
+    const mockStorage = {
+      deleteAll: async () => called.push('deleteAll'),
+      list: async () => new Map(),
+    };
+
+    // When da-admin returns 404, get returns null
+    pss.persistence.get = async () => null;
+    const updateCalled = [];
+    pss.persistence.update = async (_, cur)  => updateCalled.push(cur);
+
+    const savedSetTimeout = globalThis.setTimeout;
+    const setTimeoutCalls = []
+    try {
+      globalThis.setTimeout = () => setTimeoutCalls.push('setTimeout');
+
+      await pss.persistence.bindState(docName, testYDoc, {}, mockStorage);
+    } finally {
+      globalThis.setTimeout = savedSetTimeout;
+    }
+
+    assert.deepStrictEqual(['deleteAll'], called);
+    assert.equal(0, setTimeoutCalls.length,
+      'Should not have called setTimeout as there is no document to restore from da-admin');
+
+    assert.equal(0, updateCalled.length, 'Precondition');
+    assert.equal(2, ydocUpdateCB.length);
+
+    await ydocUpdateCB[0]();
+    await ydocUpdateCB[1]();
+    assert.deepStrictEqual(['<main></main>'], updateCalled);
+  });
+
   it('Test bindstate read from worker storage', async () => {
     const docName = 'https://admin.da.live/source/foo/bar.html';
 
@@ -570,6 +619,7 @@ describe('Collab Test Suite', () => {
     setYDoc(docName, ydoc);
     const conn = {};
     const storage = {
+      deleteAll: async () => {},
       list: async () => new Map(),
     };
 
