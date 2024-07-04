@@ -179,7 +179,7 @@ export const persistence = {
     if (initialReq.ok) {
       return initialReq.text();
     } else if (initialReq.status === 404) {
-      return EMPTY_DOC;
+      return null;
     } else {
       // eslint-disable-next-line no-console
       console.log(`unable to get resource: ${initialReq.status} - ${initialReq.statusText}`);
@@ -266,9 +266,17 @@ export const persistence = {
    */
   bindState: async (docName, ydoc, conn, storage) => {
     let current;
-    let restored = false;
+    let restored = false; // True if restored from worker storage
     try {
+      let newDoc = false;
       current = await persistence.get(docName, conn.auth, ydoc.daadmin);
+      if (current === null) {
+        // The document isn't there any more, clear the local storage
+        await storage.deleteAll();
+
+        current = EMPTY_DOC;
+        newDoc = true;
+      }
 
       // Read the stored state from internal worker storage
       const stored = await readState(docName, storage);
@@ -285,7 +293,7 @@ export const persistence = {
           // eslint-disable-next-line no-console
           console.log('Restored from worker persistence', docName);
         }
-      } else if (current === EMPTY_DOC) {
+      } else if (newDoc === true) {
         // There is no stored state and the document is empty, which means
         // we have a new doc here, which doesn't need to be restored from da-admin
         restored = true;
