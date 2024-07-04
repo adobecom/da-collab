@@ -1,33 +1,36 @@
 # Dark Alley Collab
 
 Dark Alley is a research project and collab is the collaboration backend of it.
+It's implemented as a Cloudflare Worker using a Durable Object.
 
 ## Developing locally
 ### Run
+To run da-collab locally da-admin also needs to be run locally. This is because da-collab uses a service binding
+to communicate with da-admin. When run locally the service binding will be local as well.
+
+To run da-admin locally see https://github.com/adobe/da-admin/blob/main/README.md
+
 1. Clone this repo to your computer.
 1. Run `npm install`
 1. In a terminal, run `npm run dev` this repo's folder.
-1. Start building.
+1. The da-collab service API is available via http://localhost:4711
 
-### Run (advanced)
-Like most AEM Edge Delivery projects, `da-collab` uses production service integrations by default. You work against the projects you have access to and there's less likely something breaks if you're working against production services already.
+#### Access via da-live
 
-There are times when you need to develop a feature across the different services of DA. In these scenarios, you need local or stage variations of these services. With the right credentials, you can do so with the following flags:
+To access the locally running da-collab via da-live also running locally, first run da-live on your local machine
+in addition to da-collab and da-admin. See here for instructions: https://github.com/adobe/da-live/blob/main/README.md
 
-#### DA Admin
-1. Run `da-admin` locally. Details [here](https://github.com/adobe/da-admin).
-1. Start the local AEM CLI (see above) 
-1. Visit `https://localhost:3000/?da-admin=local`
+Then open a browser and access: http://localhost:3000/?da-admin=local&da-collab=local
 
-#### DA Collab
-1. Run `da-collab` locally. 
-2. Start the local AEM CLI (see above)
-3. Visit `https://localhost:3000/?da-collab=local`
+### Run on stage
+You can deploy da-collab on Cloudflare stage via `npm deploy:stage` to test it in a real worker environment. Don't
+forget to deploy da-admin on stage as well, as otherwise you might be connecting to an old version.
+
+To access da-collab and da-admin running on stage, open this URL in a browser: http://localhost:3000/?da-admin=stage&da-collab=stage
 
 #### Notes
-1. You can mix and match these services. You can use local da-collab with stage da-admin, etc. - the only exception is that you can not use local da-admin with a none local da-collab.
-2. Each service will set a localStorage value and will not clear until you use `?name-of-service=reset`.
+1. When passing in `?da-collab=local&da-collab=local` each service will set a localStorage value and will not clear until you use `?name-of-service=reset`. It is recommended to use an incognito browser window to ensure you don't forget about this setting.
 
 ## Additional details
 ### Recommendations
-1. We recommend running `npm install` for linting.
+1. We recommend running `npm run lint` for linting.
