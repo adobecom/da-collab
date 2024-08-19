@@ -99,8 +99,18 @@ function getImageNodeWithHref() {
       },
     }],
     toDOM(node) {
-      const { src, alt, title, href } = node.attrs;
-      return ['img', { src, alt, title, href }];
+      const {
+        src,
+        alt,
+        title,
+        href,
+      } = node.attrs;
+      return ['img', {
+        src,
+        alt,
+        title,
+        href,
+      }];
     },
   };
 }
