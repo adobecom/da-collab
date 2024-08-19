@@ -33,7 +33,7 @@ describe('Parsing test suite', () => {
     assert.equal(result, html);
   })
 
-  it.only('Test linked image', async () => {
+  it('Test linked image', async () => {
     const html = `
 <body>
   <header></header>
