@@ -74,13 +74,45 @@ function addCustomMarks(marks) {
     .addToEnd('contextHighlightingMark', contextHighlight);
 }
 
+function getImageNodeWithHref() {
+  // due to bug in y-prosemirror, add href to image node
+  // which will be converted to a wrapping <a> tag
+  return {
+    inline: true,
+    attrs: {
+      src: { validate: 'string' },
+      alt: { default: null, validate: 'string|null' },
+      title: { default: null, validate: 'string|null' },
+      href: { default: null, validate: 'string|null' },
+    },
+    group: 'inline',
+    draggable: true,
+    parseDOM: [{
+      tag: 'img[src]',
+      getAttrs(dom) {
+        return {
+          src: dom.getAttribute('src'),
+          title: dom.getAttribute('title'),
+          alt: dom.getAttribute('alt'),
+          href: dom.getAttribute('href'),
+        };
+      },
+    }],
+    toDOM(node) {
+      const { src, alt, title, href } = node.attrs;
+      return ['img', { src, alt, title, href }];
+    },
+  };
+}
+
 // Note: until getSchema() is separated in its own module, this function needs to be kept in-sync
 // with the getSchema() function in da-live blocks/edit/prose/index.js
 function getSchema() {
   const { marks, nodes: baseNodes } = baseSchema.spec;
   const withLocNodes = addLocNodes(baseNodes);
   const withListnodes = addListNodes(withLocNodes, 'block+', 'block');
-  const nodes = withListnodes.append(tableNodes({ tableGroup: 'block', cellContent: 'block+' }));
+  const withTableNodes = withListnodes.append(tableNodes({ tableGroup: 'block', cellContent: 'block+' }));
+  const nodes = withTableNodes.update('image', getImageNodeWithHref());
   const customMarks = addCustomMarks(marks);
   return new Schema({ nodes, marks: customMarks });
 }
@@ -170,6 +202,15 @@ export function aem2doc(html, ydoc) {
           // eslint-disable-next-line no-param-reassign
           child.children = locChildren;
           children.push(child);
+        } else if (child.tagName === 'a' && child.children.length === 1 && child.children[0].tagName === 'img') {
+          // if an img is wrapped by a link, add the link properties to the img and remove the link
+          // due to https://github.com/yjs/y-prosemirror/issues/165
+          const { href, title } = child.properties;
+          const img = child.children[0];
+          img.properties.href = href;
+          img.properties.title = title;
+          children.push(img);
+          modified = true;
         } else {
           children.push(child);
         }
@@ -270,25 +311,37 @@ export function aem2doc(html, ydoc) {
       return Reflect.get(target, prop);
     },
   };
+
   const json = DOMParser.fromSchema(getSchema()).parse(new Proxy(main, handler2));
   prosemirrorToYXmlFragment(json, ydoc.getXmlFragment('prosemirror'));
 }
 
+const getAttrString = (attributes) => Object.entries(attributes).map(([key, value]) => ` ${key}="${value}"`).join('');
+
 function tohtml(node) {
-  let attributes = Object.entries(node.attributes).map(([key, value]) => ` ${key}="${value}"`).join('');
+  const { attributes } = node;
+  let attrString = getAttrString(attributes);
   if (!node.children || node.children.length === 0) {
     if (node.type === 'text') {
       return node.text;
     }
     if (node.type === 'p') return '';
-    if (node.type === 'img' && !node.attributes.loading) {
-      attributes += ' loading="lazy"';
+    if (node.type === 'img' && !attributes.loading) {
+      attrString += ' loading="lazy"';
     }
     if (node.type === 'img') {
-      return `<picture><source srcset="${node.attributes.src}"><source srcset="${node.attributes.src}" media="(min-width: 600px)"><${node.type}${attributes}></picture>`;
+      const { href, src, title } = attributes;
+      if (attributes.href) {
+        delete attributes.href;
+        delete attributes.title;
+        attrString = getAttrString(attributes);
+        const titleStr = title ? ` title="${title}"` : '';
+        return `<a href="${href}"${titleStr}><picture><source srcset="${src}"><source srcset="${src}" media="(min-width: 600px)"><img${attrString}></picture></a>`;
+      }
+      return `<picture><source srcset="${src}"><source srcset="${src}" media="(min-width: 600px)"><img${attrString}></picture>`;
     }
 
-    const result = node.type !== 'br' ? `<${node.type}${attributes}></${node.type}>` : `<${node.type}>`;
+    const result = node.type !== 'br' ? `<${node.type}${attrString}></${node.type}>` : `<${node.type}>`;
 
     return result;
   }
@@ -307,7 +360,7 @@ function tohtml(node) {
       }
     }
   }
-  return `<${node.type}${attributes}>${children.map((child) => tohtml(child)).join('')}</${node.type}>`;
+  return `<${node.type}${attrString}>${children.map((child) => tohtml(child)).join('')}</${node.type}>`;
 }
 
 function toBlockCSSClassNames(text) {
