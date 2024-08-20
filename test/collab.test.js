@@ -33,6 +33,27 @@ describe('Parsing test suite', () => {
     assert.equal(result, html);
   })
 
+  it('Test linked image', async () => {
+    const html = `
+<body>
+  <header></header>
+  <main><div><img src="http://www.foo.com/myimg.jpg" href="https://i.am.link" title="Img Title"></a></div></main>
+  <footer></footer>
+</body>
+`;
+    const expectedResult = `
+<body>
+  <header></header>
+  <main><div><a href="https://i.am.link" title="Img Title"><picture><source srcset="http://www.foo.com/myimg.jpg"><source srcset="http://www.foo.com/myimg.jpg" media="(min-width: 600px)"><img src="http://www.foo.com/myimg.jpg"></picture></a></div></main>
+  <footer></footer>
+</body>
+`;
+    const yDoc = new Y.Doc();
+    aem2doc(html, yDoc);
+    const result = doc2aem(yDoc);
+    assert.equal(result, expectedResult);
+  });
+
   it('Test empty roundtrip', async () => {
         const html = `
 <body>
