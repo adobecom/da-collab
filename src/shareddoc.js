@@ -16,6 +16,7 @@ import * as awarenessProtocol from 'y-protocols/awareness.js';
 import * as encoding from 'lib0/encoding.js';
 import * as decoding from 'lib0/decoding.js';
 import debounce from 'lodash/debounce.js';
+import { aem2doc, doc2aem } from './collab.js';
 
 const wsReadyStateConnecting = 0;
 const wsReadyStateOpen = 1;
@@ -23,11 +24,21 @@ const wsReadyStateOpen = 1;
 // disable gc when using snapshots!
 const gcEnabled = false;
 
+// The local cache of ydocs
 const docs = new Map();
 
+const EMPTY_DOC = '<main></main>';
 const messageSync = 0;
 const messageAwareness = 1;
+const MAX_STORAGE_KEYS = 128;
+const MAX_STORAGE_VALUE_SIZE = 131072;
 
+/**
+ * Close the WebSocket connection for a document. If there are no connections left, remove
+ * the ydoc from the local cache map.
+ * @param {ydoc} doc - the ydoc to close the connection for.
+ * @param {WebSocket} conn - the websocket connection to close.
+ */
 export const closeConn = (doc, conn) => {
   if (doc.conns.has(conn)) {
     const controlledIds = doc.conns.get(conn);
@@ -53,26 +64,136 @@ const send = (doc, conn, m) => {
   }
 };
 
+/**
+ * Read the ydoc document state from durable object persistent storage. The format is as
+ * in storeState function.
+ * @param {string} docName - The document name
+ * @param {TransactionalStorage} storage - The worker transactional storage
+ * @returns {Uint8Array | undefined} - The stored state or undefined if not found
+ */
+export const readState = async (docName, storage) => {
+  const stored = await storage.list();
+  if (stored.size === 0) {
+    // eslint-disable-next-line no-console
+    console.log('No stored doc in persistence');
+    return undefined;
+  }
+
+  if (stored.get('doc') !== docName) {
+    // eslint-disable-next-line no-console
+    console.log('Docname mismatch in persistence. Expected:', docName, 'found:', stored.get('doc'), 'Deleting storage');
+    await storage.deleteAll();
+    return undefined;
+  }
+
+  if (stored.has('docstore')) {
+    return stored.get('docstore');
+  }
+
+  const data = [];
+  for (let i = 0; i < stored.get('chunks'); i += 1) {
+    const chunk = stored.get(`chunk_${i}`);
+
+    // Note cannot use the spread operator here, as that goes via the stack and may lead to
+    // stack overflow.
+    for (let j = 0; j < chunk.length; j += 1) {
+      data.push(chunk[j]);
+    }
+  }
+  return new Uint8Array(data);
+};
+
+/**
+ * Store the document in durable object persistent storage. The document is stored as one or
+ * more byte arrays. Durable persistent storage is tied to each durable object, so the storage only
+ * applies to the current document.
+ * The durable object storage saves an object (keys and values) but there is a limit to the size
+ * of the values. So if the state is too large, it is split into chunks.
+ * The layout of the stored object is as follows:
+ * a. State size less than max storage value size:
+ *    serialized.doc = document name
+ *    serialized.docstore = state of the document
+ * b. State size greater than max storage value size:
+ *    serialized.doc = document name
+ *    serialized.chunks = number of chunks
+ *    serialized.chunk_0 = first chunk
+ *    ...
+ *    serialized.chunk_n = last chunk, where n = chunks - 1
+ * @param {string} docName - The document name
+ * @param {Uint8Array} state - The Yjs document state, as produced by Y.encodeStateAsUpdate()
+ * @param {TransactionalStorage} storage - The worker transactional storage
+ * @param {number} chunkSize - The chunk size
+ */
+export const storeState = async (docName, state, storage, chunkSize = MAX_STORAGE_VALUE_SIZE) => {
+  await storage.deleteAll();
+
+  let serialized;
+  if (state.byteLength < chunkSize) {
+    serialized = { docstore: state };
+  } else {
+    serialized = {};
+    let j = 0;
+    for (let i = 0; i < state.length; i += chunkSize, j += 1) {
+      serialized[`chunk_${j}`] = state.slice(i, i + chunkSize);
+    }
+
+    if (j >= MAX_STORAGE_KEYS) {
+      throw new Error('Object too big for worker storage');
+    }
+
+    serialized.chunks = j;
+  }
+  serialized.doc = docName;
+
+  await storage.put(serialized);
+};
+
+export const showError = (ydoc, err) => {
+  const em = ydoc.getMap('error');
+
+  // Perform the change in a transaction to avoid seeing a partial error
+  ydoc.transact(() => {
+    em.set('timestamp', Date.now());
+    em.set('message', err.message);
+    em.set('stack', err.stack);
+  });
+};
+
 export const persistence = {
-  fetch: fetch.bind(this),
   closeConn: closeConn.bind(this),
+
+  /**
+   * Get the document from da-admin. If da-admin doesn't have the doc, a new empty doc is
+   * returned.
+   * @param {string} docName - The document name
+   * @param {string} auth - The authorization header
+   * @param {object} daadmin - The da-admin worker service binding
+   * @returns {Promise<string>} - The content of the document
+   */
   get: async (docName, auth, daadmin) => {
-    const fobj = daadmin || persistence;
     const initalOpts = {};
     if (auth) {
       initalOpts.headers = new Headers({ Authorization: auth });
     }
-    const initialReq = await fobj.fetch(docName, initalOpts);
+    const initialReq = await daadmin.fetch(docName, initalOpts);
     if (initialReq.ok) {
       return initialReq.text();
     } else if (initialReq.status === 404) {
-      return '';
+      return null;
     } else {
       // eslint-disable-next-line no-console
       console.log(`unable to get resource: ${initialReq.status} - ${initialReq.statusText}`);
       throw new Error(`unable to get resource - status: ${initialReq.status}`);
     }
   },
+
+  /**
+   * Store the content in da-admin.
+   * @param {WSSharedDoc} ydoc - The Yjs document, which among other things contains the service
+   * binding to da-admin.
+   * @param {string} content - The content to store
+   * @returns {object} The response from da-admin.
+   */
   put: async (ydoc, content) => {
     const blob = new Blob([content], { type: 'text/html' });
 
@@ -90,9 +211,7 @@ export const persistence = {
       });
     }
 
-    // Use service binding if available
-    const fobj = ydoc.daadmin || persistence;
-    const { ok, status, statusText } = await fobj.fetch(ydoc.name, opts);
+    const { ok, status, statusText } = await ydoc.daadmin.fetch(ydoc.name, opts);
 
     return {
       ok,
@@ -100,24 +219,20 @@ export const persistence = {
       statusText,
     };
   },
-  invalidate: async (ydoc) => {
-    const auth = Array.from(ydoc.conns.keys())
-      .map((con) => con.auth);
-    const authHeader = auth.length > 0 ? [...new Set(auth)].join(',') : undefined;
 
-    const svrContent = await persistence.get(ydoc.name, authHeader, ydoc.daadmin);
-    const aemMap = ydoc.getMap('aem');
-    const cliContent = aemMap.get('content');
-    if (svrContent !== cliContent) {
-      // Only update the client if they're different
-      aemMap.set('svrinv', svrContent);
-    }
-  },
+  /**
+   * An update to the document has been received. Store it in da-admin.
+   * @param {WSSharedDoc} ydoc - the ydoc that has been updated.
+   * @param {string} current - the current content of the document previously
+   * obtained from da-admin
+   * @returns {string} - the new content of the document in da-admin.
+   */
   update: async (ydoc, current) => {
     let closeAll = false;
     try {
-      const content = ydoc.getMap('aem').get('content');
+      const content = doc2aem(ydoc);
       if (current !== content) {
+        // Only store the document if it was actually changed.
         const { ok, status, statusText } = await persistence.put(ydoc, content);
 
         if (!ok) {
@@ -126,12 +241,13 @@ export const persistence = {
         }
         // eslint-disable-next-line no-console
         console.log(content);
+
         return content;
       }
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error(err);
-      ydoc.emit('error', [err]);
+      showError(ydoc, err);
     }
     if (closeAll) {
       // We had an unauthorized from da-admin - lets reset the connections
@@ -140,19 +256,94 @@ export const persistence = {
     }
     return current;
   },
-  bindState: async (docName, ydoc, conn) => {
-    const persistedYdoc = new Y.Doc();
-    const aemMap = persistedYdoc.getMap('aem');
 
-    let current = await persistence.get(docName, conn.auth, ydoc.daadmin);
+  /**
+   * Bind the Ydoc to the persistence layer.
+   * @param {string} docName - the name of the document
+   * @param {WSSharedDoc} ydoc - the new ydoc to be bound
+   * @param {WebSocket} conn - the websocket connection
+   * @param {TransactionalStorage} storage - the worker transactional storage object
+   */
+  bindState: async (docName, ydoc, conn, storage) => {
+    let current;
+    let restored = false; // True if restored from worker storage
+    try {
+      let newDoc = false;
+      current = await persistence.get(docName, conn.auth, ydoc.daadmin);
+      if (current === null) {
+        // The document isn't there any more, clear the local storage
+        await storage.deleteAll();
 
-    aemMap.set('initial', current);
+        current = EMPTY_DOC;
+        newDoc = true;
+      }
 
-    Y.applyUpdate(ydoc, Y.encodeStateAsUpdate(persistedYdoc));
+      // Read the stored state from internal worker storage
+      const stored = await readState(docName, storage);
+      if (stored && stored.length > 0) {
+        Y.applyUpdate(ydoc, stored);
+
+        // Check if the state from the worker storage is the same as the current state in da-admin.
+        // So for example if da-admin doesn't have the doc any more, or if it has been altered in
+        // another way, we don't use the state of the worker storage.
+        const fromStorage = doc2aem(ydoc);
+        if (fromStorage === current) {
+          restored = true;
+
+          // eslint-disable-next-line no-console
+          console.log('Restored from worker persistence', docName);
+        }
+      } else if (newDoc === true) {
+        // There is no stored state and the document is empty, which means
+        // we have a new doc here, which doesn't need to be restored from da-admin
+        restored = true;
+      }
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.log('Problem restoring state from worker storage', error);
+      showError(ydoc, error);
+    }
+
+    if (!restored) {
+      // The doc was not restored from worker persistence, so read it from da-admin,
+      // but do this async to give the ydoc some time to get synced up first. Without
+      // this timeout, the ydoc can get confused which may result in duplicated content.
+      setTimeout(() => {
+        if (ydoc === docs.get(docName)) {
+          const rootType = ydoc.getXmlFragment('prosemirror');
+          ydoc.transact(() => {
+            try {
+              // clear document
+              rootType.delete(0, rootType.length);
+              // restore from da-admin
+              aem2doc(current, ydoc);
+
+              // eslint-disable-next-line no-console
+              console.log('Restored from da-admin', docName);
+            } catch (error) {
+              // eslint-disable-next-line no-console
+              console.log('Problem restoring state from da-admin', error);
+              showError(ydoc, error);
+            }
+          });
+        }
+      }, 1000);
+    }
+
+    ydoc.on('update', async () => {
+      // Whenever we receive an update on the document store it in the local storage
+      if (ydoc === docs.get(docName)) { // make sure this ydoc is still active
+        storeState(docName, Y.encodeStateAsUpdate(ydoc), storage);
+      }
+    });
 
     ydoc.on('update', debounce(async () => {
-      current = await persistence.update(ydoc, current);
-    }, 2000, 10000));
+      // If we receive an update on the document, store it in da-admin, but debounce it
+      // to avoid excessive da-admin calls.
+      if (ydoc === docs.get(docName)) {
+        current = await persistence.update(ydoc, current);
+      }
+    }, 2000, { maxWait: 10000 }));
   },
 };
 
@@ -164,6 +355,9 @@ export const updateHandler = (update, _origin, doc) => {
   doc.conns.forEach((_, conn) => send(doc, conn, message));
 };
 
+/**
+ * Our specialisation of the YDoc.
+ */
 export class WSSharedDoc extends Y.Doc {
   constructor(name) {
     super({ gc: gcEnabled });
@@ -200,64 +394,38 @@ export class WSSharedDoc extends Y.Doc {
   }
 }
 
-export function wait(milliseconds) {
-  return new Promise((r) => {
-    setTimeout(r, milliseconds);
-  });
-}
-
-/* Get a promise that resolves when the document is bound to persistence.
-   Multiple clients may be looking for the same document, but they should all
-   wait using it until it's bound to the persistence.
-
-   The first request here will create a promise that resolves when bindState
-   has completed. This promise is also stored on the doc.promise field and is
-   passed in on later calls on this doc as the existingPromise.
-   On subsequent if there is already an existingPromise, then wait on that same
-   promise. However if the promise hasn't resolved yet
-   or there is no content in the doc, then wait for 500 ms to avoid all clients
-   from getting connected at exactly the same time, which can result in editor
-   content being duplicated. The promise is then replaced with a new promise that
-   has the wait included. Subsequent calls will add a further wait and so on.
-   Once the persistence is bound and the document has content, the same promise
-   is returned, but that one is already resolved so it's available immediately.
+/**
+ *
+ * @param {string} docname - The name of the document
+ * @param {WebSocket} conn - the WebSocket connection being initiated
+ * @param {object} env - the durable object environment object
+ * @param {TransactionalStorage} storage - the durable object storage object
+ * @param {boolean} gc - whether garbage collection is enabled
+ * @returns The Yjs document object, which may be shared across multiple sockets.
  */
-export const getBindPromise = async (docName, doc, conn, existingPromise, fnWait = wait) => {
-  if (existingPromise) {
-    const hasContent = doc.getMap('aem')?.has('content');
-    if (doc.boundState && hasContent) {
-      // eslint-disable-next-line no-param-reassign
-      delete doc.promiseParties;
-      return existingPromise;
-    } else {
-      if (!doc.promiseParties) {
-        // eslint-disable-next-line no-param-reassign
-        doc.promiseParties = [];
-      }
-      doc.promiseParties.push('true'); // wait extra for each interested party
-      await fnWait(doc.promiseParties.length * 500);
-      return existingPromise;
-    }
-  } else {
-    return persistence.bindState(docName, doc, conn)
-      .then(() => {
-        // eslint-disable-next-line no-param-reassign
-        doc.boundState = true;
-      });
-  }
-};
-
-export const getYDoc = async (docname, conn, env, gc = true) => {
+export const getYDoc = async (docname, conn, env, storage, gc = true) => {
   let doc = docs.get(docname);
   if (doc === undefined) {
+    // The doc is not yet in the cache, create a new one.
     doc = new WSSharedDoc(docname);
     doc.gc = gc;
     docs.set(docname, doc);
   }
-  doc.conns.set(conn, new Set());
-  doc.daadmin = env.daadmin;
-  doc.promise = getBindPromise(docname, doc, conn, doc.promise);
 
+  if (!doc.conns.get(conn)) {
+    doc.conns.set(conn, new Set());
+  }
+
+  // Store the service binding to da-admin which we receive through the environment in the doc
+  doc.daadmin = env.daadmin;
+  if (!doc.promise) {
+    // The doc is not yet bound to the persistence layer, do so now. The promise will be resolved
+    // when bound.
+    doc.promise = persistence.bindState(docname, doc, conn, storage);
+  }
+
+  // We wait for the promise, for second and subsequent connections to the same doc, this will
+  // already be resolved.
   await doc.promise;
   return doc;
 };
@@ -293,24 +461,47 @@ export const messageListener = (conn, doc, message) => {
   } catch (err) {
     // eslint-disable-next-line no-console
     console.error(err);
-    doc.emit('error', [err]);
+    showError(doc, err);
   }
 };
 
+/**
+ * Invalidate the worker storage for the document, which will ensure that when accessed
+ * the worker will fetch the latest version of the document from the da-admin.
+ * Invalidation is implemented by closing all client connections to the doc, which will
+ * cause it to be reinitialised when accessed.
+ * @param {string} docName - The name of the document
+ * @returns true if the document was found and invalidated, false otherwise.
+ */
 export const invalidateFromAdmin = async (docName) => {
+  // eslint-disable-next-line no-console
+  console.log('Invalidate from Admin received', docName);
   const ydoc = docs.get(docName);
   if (ydoc) {
-    await persistence.invalidate(ydoc);
+    // As we are closing all connections, the ydoc will be removed from the docs map
+    ydoc.conns.forEach((_, c) => closeConn(ydoc, c));
+
     return true;
+  } else {
+    // eslint-disable-next-line no-console
+    console.log('Document not found', docName);
   }
   return false;
 };
 
-export const setupWSConnection = async (conn, docName, env) => {
+/**
+ * Called when a new (Yjs) WebSocket connection is being established.
+ * @param {WebSocket} conn - The WebSocket connection
+ * @param {string} docName - The name of the document
+ * @param {object} env - The durable object environment object
+ * @param {TransactionalStorage} storage - The worker transactional storage object
+ * @returns {Promise<void>} - The return value of this
+ */
+export const setupWSConnection = async (conn, docName, env, storage) => {
   // eslint-disable-next-line no-param-reassign
   conn.binaryType = 'arraybuffer';
   // get doc, initialize if it does not exist yet
-  const doc = await getYDoc(docName, conn, env, true);
+  const doc = await getYDoc(docName, conn, env, storage, true);
 
   // listen and reply to events
   conn.addEventListener('message', (message) => messageListener(conn, doc, new Uint8Array(message.data)));

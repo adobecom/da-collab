@@ -11,8 +11,10 @@
  */
 import assert from 'assert';
 
+import * as Y from 'yjs';
 import defaultEdge, { DocRoom, handleApiRequest, handleErrors } from '../src/edge.js';
-import { persistence, setYDoc } from '../src/shareddoc.js';
+import { WSSharedDoc, persistence, setYDoc } from '../src/shareddoc.js';
+import { doc2aem } from '../src/collab.js';
 
 function hash(str) {
   let hash = 0;
@@ -25,6 +27,34 @@ function hash(str) {
 }
 
 describe('Worker test suite', () => {
+  it('Test deleteAdmin', async () => {
+    const expectedHash = hash('https://some.where/some/doc.html');
+    const req = {
+      url: 'http://localhost:9999/api/v1/deleteadmin?doc=https://some.where/some/doc.html'
+    };
+
+    const roomFetchCalls = []
+    const room = {
+      fetch(url) {
+        roomFetchCalls.push(url.toString());
+        return new Response(null, { status: 200 });
+      }
+    };
+    const rooms = {
+      idFromName(nm) { return hash(nm) },
+      get(id) {
+        if (id === expectedHash) {
+          return room;
+        }
+      }
+    }
+    const env = { rooms };
+
+    const resp = await handleApiRequest(req, env);
+    assert.equal(200, resp.status);
+    assert.deepStrictEqual(roomFetchCalls, ['https://some.where/some/doc.html?api=deleteAdmin'])
+  });
+
   it('Test syncAdmin request without doc', async () => {
     const req = {
       url: 'http://localhost:12345/api/v1/syncadmin'
@@ -105,45 +135,66 @@ describe('Worker test suite', () => {
     assert.equal('Bad Request', await resp.text());
   });
 
-  it('Docroom syncFromAdmin', async () => {
-    const aemMap = new Map();
-    const ydocName = 'http://foobar.com/a/b/c.html';
-    const mockYdoc = {
-      conns: [],
-      name: ydocName,
-      getMap(name) { return name === 'aem' ? aemMap : null; }
+  it('Docroom deleteFromAdmin', async () => {
+    const ydocName = 'http://foobar.com/q.html';
+    const testYdoc = new WSSharedDoc(ydocName);
+    const m = setYDoc(ydocName, testYdoc);
+
+    const connCalled = []
+    const mockConn = {
+      close() { connCalled.push('close'); }
     };
-    setYDoc(ydocName, mockYdoc);
+    testYdoc.conns.set(mockConn, 1234);
+
+    const req = {
+      url: `${ydocName}?api=deleteAdmin`
+    };
+
+    const dr = new DocRoom({});
+
+    assert(m.has(ydocName), 'Precondition');
+    const resp = await dr.fetch(req)
+    assert.equal(204, resp.status);
+    assert(!m.has(ydocName), 'Doc should have been removed');
+    assert.deepStrictEqual(['close'], connCalled);
+  });
+
+  it('Docroom deleteFromAdmin not found', async () => {
+    const req = {
+      url: `https://blah.blah/blah.html?api=deleteAdmin`
+    };
+
+    const dr = new DocRoom({});
+    const resp = await dr.fetch(req)
+    assert.equal(404, resp.status);
+  });
+
+  it('Docroom syncFromAdmin', async () => {
+    const ydocName = 'http://foobar.com/a/b/c.html';
+    const testYdoc = new WSSharedDoc(ydocName);
+    const m = setYDoc(ydocName, testYdoc);
+
+    const connCalled = []
+    const mockConn = {
+      close() { connCalled.push('close'); }
+    };
+    testYdoc.conns.set(mockConn, 1234);
 
     const req = {
       url: `${ydocName}?api=syncAdmin`
     };
 
-    const dr = new DocRoom({ storage: null }, null);
+    const dr = new DocRoom({});
 
-    const mockFetch = async (url) => {
-      if (url === ydocName) {
-        return new Response('Document content', { status: 200 });
-      }
-      return null;
-    }
-    const oldPFectch = persistence.fetch;
-    persistence.fetch = mockFetch;
-
-    try {
-      assert(!aemMap.get('svrinv'), 'Precondition');
-      const resp = await dr.fetch(req)
-
-      assert.equal(200, resp.status);
-      assert.equal('Document content', aemMap.get('svrinv'));
-    } finally {
-      persistence.fetch = oldPFectch;
-    }
+    assert(m.has(ydocName), 'Precondition');
+    const resp = await dr.fetch(req)
+    assert.equal(200, resp.status);
+    assert(!m.has(ydocName), 'Doc should have been removed');
+    assert.deepStrictEqual(['close'], connCalled);
   });
 
   it('Unknown doc update request gives 404', async () => {
-    const dr = new DocRoom({ storage: null }, null);
-    dr.callGlobalFetch = async () => new Response(null, { status: 418 });
+    const dr = new DocRoom({});
 
     const req = {
       url: 'http://foobar.com/a/b/d/e/f.html?api=syncAdmin'
@@ -273,18 +324,22 @@ describe('Worker test suite', () => {
       }
     }
 
-    const rooms = {
-      idFromName(nm) { return `id${hash(nm)}`; },
-      get(id) { return id === 'id1255893316' ? myRoom : null; }
-    }
-    const env = { rooms };
-
     const mockFetchCalled = [];
     const mockFetch = async (url, opts) => {
       mockFetchCalled.push({ url, opts });
       return new Response(null, { status: 200 });
     };
-    const res = await handleApiRequest(req, env, mockFetch);
+    const serviceBinding = {
+      fetch: mockFetch
+    };
+
+    const rooms = {
+      idFromName(nm) { return `id${hash(nm)}`; },
+      get(id) { return id === 'id1255893316' ? myRoom : null; }
+    }
+    const env = { rooms, daadmin: serviceBinding };
+
+    const res = await handleApiRequest(req, env);
     assert.equal(306, res.status);
 
     assert.equal(1, mockFetchCalled.length);
@@ -341,8 +396,10 @@ describe('Worker test suite', () => {
     }
 
     const mockFetch = async (url, opts) => new Response(null, {status: 401});
+    const daadmin = { fetch: mockFetch };
+    const env = { daadmin };
 
-    const res = await handleApiRequest(req, {}, mockFetch);
+    const res = await handleApiRequest(req, env);
     assert.equal(401, res.status);
   });
 
