@@ -141,6 +141,10 @@ function convertSectionBreak(node) {
   }
 }
 
+function divFilter(parent) {
+  return parent.children.filter((child) => child.tagName === 'div');
+}
+
 function blockToTable(child, children) {
   children.push({
     type: 'element', tagName: 'p', children: [], properties: {},
@@ -148,9 +152,11 @@ function blockToTable(child, children) {
   const classes = Array.from(child.properties.className);
   const name = classes.shift();
   const blockName = classes.length > 0 ? `${name} (${classes.join(', ')})` : name;
-  const rows = [...child.children];
-  const maxCols = rows.reduce((cols, row) => (
-    row.children?.length > cols ? row.children?.length : cols), 0);
+  const rows = [...divFilter(child)];
+  const maxCols = rows.reduce((colCount, row) => {
+    const cols = divFilter(row);
+    return cols.length > colCount ? cols.length : colCount;
+  }, 0);
 
   const table = {
     type: 'element', tagName: 'table', children: [], properties: {},
@@ -161,7 +167,7 @@ function blockToTable(child, children) {
   };
 
   const td = {
-    type: 'element', tagName: 'td', children: [{ type: 'text', value: blockName }], properties: { colspan: maxCols },
+    type: 'element', tagName: 'td', children: [{ type: 'text', value: blockName }], properties: { colSpan: maxCols },
   };
 
   headerRow.children.push(td);
@@ -176,7 +182,7 @@ function blockToTable(child, children) {
         type: 'element', tagName: 'td', children: [], properties: {},
       };
       if (cells.length < maxCols && idx === cells.length - 1) {
-        tdi.properties.colspan = maxCols - idx;
+        tdi.properties.colSpan = maxCols - idx;
       }
       tdi.children.push(cells[idx]);
       tr.children.push(tdi);

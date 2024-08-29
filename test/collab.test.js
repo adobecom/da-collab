@@ -18,6 +18,33 @@ const collapseTagWhitespace = (str) => str.replace(/>\s+</g, '><');
 const collapseWhitespace = (str) => collapseTagWhitespace(str.replace(/\s+/g, ' '));
 
 describe('Parsing test suite', () => {
+  it('DIV block respects colspan', async () => {
+    let html = `
+      <body>
+        <header></header>
+        <main>
+          <div>
+            <div class="hello">
+              <div>
+                <div><p>Row 1 - Column 1</p></div>
+                <div><p>Row 1 - Column 2</p></div>
+              </div>
+            </div>
+          </div>
+        </main>
+        <footer></footer>
+      </body>
+      `;
+
+    html = collapseWhitespace(html);
+
+    const yDoc = new Y.Doc();
+    aem2doc(html, yDoc);
+    const result = doc2aem(yDoc);
+    assert.equal(collapseWhitespace(result), html);
+  });
+
+
   it('Text parsing produces error', async () => {
     const html = `
 <body>
