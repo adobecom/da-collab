@@ -227,6 +227,29 @@ assert.equal(result, html);
     console.log(result);
     assert.equal(result, html);
   });
+
+  it('Test section break conversion', () => {
+    const htmlIn = `
+<body>
+  <header></header>
+  <main><div><p>ABC</p><p>---</p><p>DEF</p></div></main>
+  <footer></footer>
+</body>
+`;
+    const htmlOut = `
+<body>
+  <header></header>
+  <main><div><p>ABC</p></div><div><p>DEF</p></div></main>
+  <footer></footer>
+</body>
+`;
+    const yDoc = new Y.Doc();
+    aem2doc(htmlIn, yDoc);
+    const result = doc2aem(yDoc);
+    console.log(result);
+    assert.equal(result, htmlOut,
+      'The horizontal line should have been converted to a section break');
+  });
 });
 
 
