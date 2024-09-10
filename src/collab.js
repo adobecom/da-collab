@@ -133,8 +133,9 @@ function convertSectionBreak(node) {
     node.children.forEach(convertSectionBreak);
   }
   if (node.tagName === 'p' && node.children && node.children.length === 1) {
-    if (node.children[0].type === 'text' && node.children[0].text === '---') {
-      node.children.clear();
+    if (node.children[0].type === 'text' && node.children[0].value === '---') {
+      // eslint-disable-next-line no-param-reassign
+      node.children.length = 0;
       // eslint-disable-next-line no-param-reassign
       node.tagName = 'hr';
     }
