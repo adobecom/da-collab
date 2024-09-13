@@ -1,6 +1,6 @@
-# Dark Alley Collab
+# Document Authoring Collab
 
-Dark Alley is a research project and collab is the collaboration backend of it.
+Document Authoring is a research project and collab is the collaboration backend of it.
 It's implemented as a Cloudflare Worker using a Durable Object.
 
 ## Developing locally
