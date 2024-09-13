@@ -12,7 +12,7 @@
 import assert from 'assert';
 import * as Y from 'yjs';
 import { readFileSync } from 'fs';
-import { aem2doc, doc2aem } from '../src/collab.js';
+import { aem2doc, doc2aem, tableToBlock } from '../src/collab.js';
 
 const collapseTagWhitespace = (str) => str.replace(/>\s+</g, '><');
 const collapseWhitespace = (str) => collapseTagWhitespace(str.replace(/\s+/g, ' '));
@@ -249,6 +249,66 @@ assert.equal(result, html);
     console.log(result);
     assert.equal(result, htmlOut,
       'The horizontal line should have been converted to a section break');
+  });
+
+  it('Test table with empty header', () => {
+    const values = {
+      // no values
+    }
+    const p = {
+      children: [values]
+    }
+    const tr = {
+      children: [p]
+    }
+    const td = {
+      children: [tr]
+    }
+    const tbody = {
+      children: [td]
+    }
+    const table = {
+      children: [tbody]
+    }
+
+    const fragment = {
+      children: []
+    }
+    tableToBlock(table, fragment);
+    assert.equal(1, fragment.children.length);
+    const divEl = fragment.children[0];
+    assert.equal('div', divEl.type);
+    assert.equal('', divEl.attributes.class);
+  });
+
+  it('Test table with non-empty header', () => {
+    const values = {
+      text: 'myblock'
+    }
+    const p = {
+      children: [values]
+    }
+    const tr = {
+      children: [p]
+    }
+    const td = {
+      children: [tr]
+    }
+    const tbody = {
+      children: [td]
+    }
+    const table = {
+      children: [tbody]
+    }
+
+    const fragment = {
+      children: []
+    }
+    tableToBlock(table, fragment);
+    assert.equal(1, fragment.children.length);
+    const divEl = fragment.children[0];
+    assert.equal('div', divEl.type);
+    assert.equal('myblock', divEl.attributes.class);
   });
 });
 
