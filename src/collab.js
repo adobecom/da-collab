@@ -399,10 +399,10 @@ function toBlockCSSClassNames(text) {
     .filter((name) => !!name);
 }
 
-function tableToBlock(child, fragment) {
+export function tableToBlock(child, fragment) {
   const rows = child.children[0].children;
   const nameRow = rows.shift();
-  const className = toBlockCSSClassNames(nameRow.children[0].children[0].children[0].text).join(' ');
+  const className = toBlockCSSClassNames(nameRow.children[0].children[0].children[0]?.text).join(' ');
   const block = { type: 'div', attributes: { class: className }, children: [] };
   fragment.children.push(block);
   rows.forEach((row) => {
