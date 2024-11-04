@@ -115,13 +115,25 @@ function getImageNodeWithHref() {
   };
 }
 
+function getTableNodeSchema() {
+  const getTableAttrs = (dom) => ({
+    dataId: dom.getAttribute('dataId') || null,
+  });
+
+  const schema = tableNodes({ tableGroup: 'block', cellContent: 'block+' });
+  schema.table.attrs = { dataId: { default: null } };
+  schema.table.parseDOM = [{ tag: 'table', getAttrs: (dom) => getTableAttrs(dom) }];
+  schema.table.toDOM = (node) => ['table', node.attrs, ['tbody', 0]];
+  return schema;
+}
+
 // Note: until getSchema() is separated in its own module, this function needs to be kept in-sync
 // with the getSchema() function in da-live blocks/edit/prose/index.js
 function getSchema() {
   const { marks, nodes: baseNodes } = baseSchema.spec;
   const withLocNodes = addLocNodes(baseNodes);
   const withListnodes = addListNodes(withLocNodes, 'block+', 'block');
-  const withTableNodes = withListnodes.append(tableNodes({ tableGroup: 'block', cellContent: 'block+' }));
+  const withTableNodes = withListnodes.append(getTableNodeSchema());
   const nodes = withTableNodes.update('image', getImageNodeWithHref());
   const customMarks = addCustomMarks(marks);
   return new Schema({ nodes, marks: customMarks });
@@ -162,6 +174,11 @@ function blockToTable(child, children) {
   const table = {
     type: 'element', tagName: 'table', children: [], properties: {},
   };
+
+  if (child.properties.dataId) {
+    table.properties.dataId = child.properties.dataId;
+  }
+
   children.push(table);
   const headerRow = {
     type: 'element', tagName: 'tr', children: [], properties: {},
@@ -404,6 +421,8 @@ export function tableToBlock(child, fragment) {
   const nameRow = rows.shift();
   const className = toBlockCSSClassNames(nameRow.children[0].children[0].children[0]?.text).join(' ');
   const block = { type: 'div', attributes: { class: className }, children: [] };
+  const dataId = child?.attributes?.dataId;
+  if (dataId) block.attributes['data-id'] = dataId;
   fragment.children.push(block);
   rows.forEach((row) => {
     const div = { type: 'div', attributes: {}, children: [] };
