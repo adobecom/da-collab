@@ -86,30 +86,42 @@ const baseNodes = {
   text: {
     group: 'inline',
   },
+  // due to bug in y-prosemirror, add href to image node
+  // which will be converted to a wrapping <a> tag
   image: {
     inline: true,
     attrs: {
-      src: {},
-      alt: { default: null },
-      title: { default: null },
+      src: { validate: 'string' },
+      alt: { default: null, validate: 'string|null' },
+      title: { default: null, validate: 'string|null' },
+      href: { default: null, validate: 'string|null' },
     },
     group: 'inline',
     draggable: true,
-    parseDOM: [
-      {
-        tag: 'img[src]',
-        getAttrs(dom) {
-          return {
-            src: dom.getAttribute('src'),
-            title: dom.getAttribute('title'),
-            alt: dom.getAttribute('alt'),
-          };
-        },
+    parseDOM: [{
+      tag: 'img[src]',
+      getAttrs(dom) {
+        return {
+          src: dom.getAttribute('src'),
+          title: dom.getAttribute('title'),
+          alt: dom.getAttribute('alt'),
+          href: dom.getAttribute('href'),
+        };
       },
-    ],
+    }],
     toDOM(node) {
-      const { src, alt, title } = node.attrs;
-      return ['img', { src, alt, title }];
+      const {
+        src,
+        alt,
+        title,
+        href,
+      } = node.attrs;
+      return ['img', {
+        src,
+        alt,
+        title,
+        href,
+      }];
     },
   },
   hard_break: {
@@ -121,7 +133,7 @@ const baseNodes = {
       return ['br'];
     },
   },
-  // DA Regional Edit tags
+  // DA diffing tags
   loc_added: {
     group: 'block',
     content: 'block+',
@@ -191,16 +203,6 @@ const baseMarks = {
 
 const baseSchema = new Schema({ nodes: baseNodes, marks: baseMarks });
 
-function addLocNodes(nodes) {
-  if (!nodes.content.includes('loc_deleted')) {
-    nodes.content.push('loc_deleted');
-    nodes.content.push();
-    nodes.content.push('loc_added');
-    nodes.content.push();
-  }
-  return nodes;
-}
-
 function addCustomMarks(marks) {
   const sup = {
     parseDOM: [{ tag: 'sup' }, { clearMark: (m) => m.type.name === 'sup' }],
@@ -220,47 +222,6 @@ function addCustomMarks(marks) {
     .addToEnd('contextHighlightingMark', contextHighlight);
 }
 
-function getImageNodeWithHref() {
-  // due to bug in y-prosemirror, add href to image node
-  // which will be converted to a wrapping <a> tag
-  return {
-    inline: true,
-    attrs: {
-      src: { validate: 'string' },
-      alt: { default: null, validate: 'string|null' },
-      title: { default: null, validate: 'string|null' },
-      href: { default: null, validate: 'string|null' },
-    },
-    group: 'inline',
-    draggable: true,
-    parseDOM: [{
-      tag: 'img[src]',
-      getAttrs(dom) {
-        return {
-          src: dom.getAttribute('src'),
-          title: dom.getAttribute('title'),
-          alt: dom.getAttribute('alt'),
-          href: dom.getAttribute('href'),
-        };
-      },
-    }],
-    toDOM(node) {
-      const {
-        src,
-        alt,
-        title,
-        href,
-      } = node.attrs;
-      return ['img', {
-        src,
-        alt,
-        title,
-        href,
-      }];
-    },
-  };
-}
-
 function getTableNodeSchema() {
   const getTableAttrs = (dom) => ({
     dataId: dom.getAttribute('dataId') || null,
@@ -276,11 +237,10 @@ function getTableNodeSchema() {
 // Note: until getSchema() is separated in its own module, this function needs to be kept in-sync
 // with the getSchema() function in da-live blocks/edit/prose/index.js
 export function getSchema() {
-  const { marks, nodes: baseSchemaNodes } = baseSchema.spec;
-  const withLocNodes = addLocNodes(baseSchemaNodes);
-  const withListnodes = addListNodes(withLocNodes, 'block+', 'block');
-  const withTableNodes = withListnodes.append(getTableNodeSchema());
-  const nodes = withTableNodes.update('image', getImageNodeWithHref());
+  let { nodes } = baseSchema.spec;
+  const { marks } = baseSchema.spec;
+  nodes = addListNodes(nodes, 'block+', 'block');
+  nodes = nodes.append(getTableNodeSchema());
   const customMarks = addCustomMarks(marks);
   return new Schema({ nodes, marks: customMarks });
 }
