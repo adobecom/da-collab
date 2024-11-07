@@ -10,6 +10,18 @@
  * governing permissions and limitations under the License.
  */
 
+/*
+ * IMPORTANT:
+ * Until getSchema() is separated into its own module,
+ * these files need to be kept in-sync:
+ *
+ * da-live /blocks/edit/prose/schema.js
+ * da-collab /src/schema.js
+ *
+ * Note that the import locations are different between the two files
+ * but otherwise the files should be identical.
+ */
+
 import { Schema } from 'prosemirror-model';
 import { addListNodes } from 'prosemirror-schema-list';
 import { tableNodes } from 'prosemirror-tables';
@@ -26,17 +38,25 @@ function parseLocDOM(locTag) {
   }];
 }
 
+const topLevelAttrs = { dataId: { default: null, validate: 'string|null' } };
+const getTopLevelToDomAttrs = (node) => ({ 'data-id': node.attrs.dataId });
+const getTopLevelParseAttrs = (dom) => ({ dataId: dom.getAttribute('dataId') || null });
+
+const getHeadingAttrs = (level) => (dom) => ({
+  level,
+  ...getTopLevelParseAttrs(dom),
+});
+
 /* Base nodes taken from prosemirror-schema-basic */
 const baseNodes = {
-  doc: {
-    content: 'block+',
-  },
+  doc: { content: 'block+' },
   paragraph: {
+    attrs: { ...topLevelAttrs },
     content: 'inline*',
     group: 'block',
-    parseDOM: [{ tag: 'p' }],
-    toDOM() {
-      return ['p', 0];
+    parseDOM: [{ tag: 'p', getAttrs: getTopLevelParseAttrs }],
+    toDOM(node) {
+      return ['p', { ...getTopLevelToDomAttrs(node) }, 0];
     },
   },
   blockquote: {
@@ -56,20 +76,23 @@ const baseNodes = {
     },
   },
   heading: {
-    attrs: { level: { default: 1 } },
+    attrs: {
+      level: { default: 1 },
+      ...topLevelAttrs,
+    },
     content: 'inline*',
     group: 'block',
     defining: true,
     parseDOM: [
-      { tag: 'h1', attrs: { level: 1 } },
-      { tag: 'h2', attrs: { level: 2 } },
-      { tag: 'h3', attrs: { level: 3 } },
-      { tag: 'h4', attrs: { level: 4 } },
-      { tag: 'h5', attrs: { level: 5 } },
-      { tag: 'h6', attrs: { level: 6 } },
+      { tag: 'h1', getAttrs: getHeadingAttrs(1) },
+      { tag: 'h2', getAttrs: getHeadingAttrs(2) },
+      { tag: 'h3', getAttrs: getHeadingAttrs(3) },
+      { tag: 'h4', getAttrs: getHeadingAttrs(4) },
+      { tag: 'h5', getAttrs: getHeadingAttrs(5) },
+      { tag: 'h6', getAttrs: getHeadingAttrs(6) },
     ],
     toDOM(node) {
-      return [`h${node.attrs.level}`, 0];
+      return [`h${node.attrs.level}`, { ...getTopLevelToDomAttrs(node) }, 0];
     },
   },
   code_block: {
@@ -83,9 +106,7 @@ const baseNodes = {
       return ['pre', ['code', 0]];
     },
   },
-  text: {
-    group: 'inline',
-  },
+  text: { group: 'inline' },
   // due to bug in y-prosemirror, add href to image node
   // which will be converted to a wrapping <a> tag
   image: {
@@ -95,6 +116,7 @@ const baseNodes = {
       alt: { default: null, validate: 'string|null' },
       title: { default: null, validate: 'string|null' },
       href: { default: null, validate: 'string|null' },
+      ...topLevelAttrs,
     },
     group: 'inline',
     draggable: true,
@@ -106,6 +128,7 @@ const baseNodes = {
           title: dom.getAttribute('title'),
           alt: dom.getAttribute('alt'),
           href: dom.getAttribute('href'),
+          ...getTopLevelParseAttrs(dom),
         };
       },
     }],
@@ -121,6 +144,7 @@ const baseNodes = {
         alt,
         title,
         href,
+        ...getTopLevelToDomAttrs(node),
       }];
     },
   },
@@ -223,23 +247,32 @@ function addCustomMarks(marks) {
 }
 
 function getTableNodeSchema() {
-  const getTableAttrs = (dom) => ({
-    dataId: dom.getAttribute('dataId') || null,
-  });
-
   const schema = tableNodes({ tableGroup: 'block', cellContent: 'block+' });
-  schema.table.attrs = { dataId: { default: null } };
-  schema.table.parseDOM = [{ tag: 'table', getAttrs: (dom) => getTableAttrs(dom) }];
+  schema.table.attrs = { ...topLevelAttrs };
+  schema.table.parseDOM = [{ tag: 'table', getAttrs: getTopLevelParseAttrs }];
   schema.table.toDOM = (node) => ['table', node.attrs, ['tbody', 0]];
   return schema;
 }
 
-// Note: until getSchema() is separated in its own module, this function needs to be kept in-sync
-// with the getSchema() function in da-live blocks/edit/prose/index.js
+function addAttrsToListNode(_nodes, listType, tag) {
+  const nodes = _nodes;
+  nodes.get(listType).attrs = { ...topLevelAttrs };
+  nodes.get(listType).parseDOM = [{ tag, getAttrs: getTopLevelParseAttrs }];
+  nodes.get(listType).toDOM = (node) => [tag, { ...getTopLevelToDomAttrs(node) }, 0];
+}
+
+function addListNodeSchema(nodes) {
+  const withListNodes = addListNodes(nodes, 'block+', 'block');
+  addAttrsToListNode(withListNodes, 'bullet_list', 'ul');
+  addAttrsToListNode(withListNodes, 'ordered_list', 'ol');
+  return withListNodes;
+}
+
+// eslint-disable-next-line import/prefer-default-export
 export function getSchema() {
   let { nodes } = baseSchema.spec;
   const { marks } = baseSchema.spec;
-  nodes = addListNodes(nodes, 'block+', 'block');
+  nodes = addListNodeSchema(nodes);
   nodes = nodes.append(getTableNodeSchema());
   const customMarks = addCustomMarks(marks);
   return new Schema({ nodes, marks: customMarks });
