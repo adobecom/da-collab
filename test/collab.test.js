@@ -15,7 +15,7 @@ import { readFileSync } from 'fs';
 import { aem2doc, doc2aem, tableToBlock } from '../src/collab.js';
 
 const collapseTagWhitespace = (str) => str.replace(/>\s+</g, '><');
-const collapseWhitespace = (str) => collapseTagWhitespace(str.replace(/\s+/g, ' '));
+const collapseWhitespace = (str) => collapseTagWhitespace(str.replace(/\s+/g, ' ')).trim();
 
 describe('Parsing test suite', () => {
   it('table data-id support', async () => {
@@ -89,14 +89,14 @@ describe('Parsing test suite', () => {
     const html = `
 <body>
   <header></header>
-  <main><div><img src="http://www.foo.com/myimg.jpg" href="https://i.am.link" title="Img Title"></a></div></main>
+  <main><div><img src="http://www.foo.com/myimg.jpg" href="https://i.am.link" title="Img Title" data-id="myImgId"></a></div></main>
   <footer></footer>
 </body>
 `;
     const expectedResult = `
 <body>
   <header></header>
-  <main><div><a href="https://i.am.link" title="Img Title"><picture><source srcset="http://www.foo.com/myimg.jpg"><source srcset="http://www.foo.com/myimg.jpg" media="(min-width: 600px)"><img src="http://www.foo.com/myimg.jpg"></picture></a></div></main>
+  <main><div><a href="https://i.am.link" title="Img Title"><picture><source srcset="http://www.foo.com/myimg.jpg"><source srcset="http://www.foo.com/myimg.jpg" media="(min-width: 600px)"><img src="http://www.foo.com/myimg.jpg" data-id="myImgId"></picture></a></div></main>
   <footer></footer>
 </body>
 `;
@@ -119,6 +119,7 @@ describe('Parsing test suite', () => {
       const result = doc2aem(yDoc);
       assert.equal(result, html);
     });
+
     it('Test simple roundtrip', async () => {
         const html = `
 <body>
@@ -132,6 +133,7 @@ describe('Parsing test suite', () => {
       const result = doc2aem(yDoc);
       assert.equal(result, html);
     });
+
     it('Test more complex roundtrip', async () => {
         const html = `
 <body>
@@ -236,6 +238,77 @@ assert.equal(result, html);
     aem2doc(html, yDoc);
     const result = doc2aem(yDoc);
     assert.equal(collapseWhitespace(result.trim()), collapseWhitespace(html.trim()));
+  });
+
+  it('Test data ids', async () => {
+    let html = `
+      <body>
+        <header></header>
+        <main>
+          <div>
+            <p>Paragraph with no data id</p>
+            <p data-id="p-id">Paragraph with data id</p>
+          </div>
+          <div>
+            <h1 data-id="h1-id">H1</h1>
+            <h2 data-id="h2-id">H2</h2>
+            <h3 data-id="h3-id">H3</h3>
+            <h4 data-id="h4-id">H4</h4>
+            <h5 data-id="h5-id">H5</h5>
+            <h6 data-id="h6-id">H6</h6>
+          </div>
+          <div>
+            <h1>H1 with no data id</h1>
+            <h2>H2 with no data id</h2>
+            <h3>H3 with no data id</h3>
+            <h4>H4 with no data id</h4>
+            <h5>H5 with no data id</h5>
+            <h6>H6 with no data id</h6>
+          </div>
+          <div>
+            <ol data-id="ol-1">
+              <li>Item 1</li>
+            </ol>
+            <ol>
+              <li>Item 1</li>
+              <li>Item 2</li>
+            </ol>
+          </div>
+          <div>
+            <ul data-id="ul-1">
+              <li>Item 1</li>
+              <li>Item 2</li>
+            </ul>
+            <ul>
+              <li>Item 1</li>
+              <li>Item 2</li>
+            </ul>
+          </div>
+          <div>
+            <pre data-id="mycode"><code>const hello = 'world';</code></pre>
+            <pre><code>const hello = 'no id';</code></pre>
+          </div>
+          <div>
+            <blockquote data-id="bq-id">
+              <p>Words can be like X-rays, if you use them properly—they’ll go through anything. You read and you’re pierced.</p>
+              <p>—Aldous Huxley, Brave New World</p>
+            </blockquote>
+          </div>
+          <div>
+            <blockquote>
+              <p>No ID Here.</p>
+              <p>—Shantanu, Adobe</p>
+            </blockquote>
+          </div>
+        </main>
+        <footer></footer>
+      </body>
+      `;
+    html = collapseWhitespace(html);
+    const yDoc = new Y.Doc();
+    aem2doc(html, yDoc);
+    const result = collapseWhitespace(doc2aem(yDoc));
+    assert.equal(result, html);
   });
 
   it('Test superscript and subscript', async () => {
