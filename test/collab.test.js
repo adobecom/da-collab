@@ -284,6 +284,22 @@ assert.equal(result, html);
               <li>Item 2</li>
             </ul>
           </div>
+          <div>
+            <pre data-id="mycode"><code>const hello = 'world';</code></pre>
+            <pre><code>const hello = 'no id';</code></pre>
+          </div>
+          <div>
+            <blockquote data-id="bq-id">
+              <p>Words can be like X-rays, if you use them properly—they’ll go through anything. You read and you’re pierced.</p>
+              <p>—Aldous Huxley, Brave New World</p>
+            </blockquote>
+          </div>
+          <div>
+            <blockquote>
+              <p>No ID Here.</p>
+              <p>—Shantanu, Adobe</p>
+            </blockquote>
+          </div>
         </main>
         <footer></footer>
       </body>
