@@ -265,11 +265,16 @@ export const persistence = {
    * @param {TransactionalStorage} storage - the worker transactional storage object
    */
   bindState: async (docName, ydoc, conn, storage) => {
+    let timingReadStateDuration;
+    let timingDaAdminGetDuration;
+
     let current;
     let restored = false; // True if restored from worker storage
     try {
       let newDoc = false;
+      const timingBeforeDaAdminGet = Date.now();
       current = await persistence.get(docName, conn.auth, ydoc.daadmin);
+      timingDaAdminGetDuration = Date.now() - timingBeforeDaAdminGet;
       if (current === null) {
         // The document isn't there any more, clear the local storage
         await storage.deleteAll();
@@ -278,8 +283,11 @@ export const persistence = {
         newDoc = true;
       }
 
+      const timingBeforeReadState = Date.now();
       // Read the stored state from internal worker storage
       const stored = await readState(docName, storage);
+      timingReadStateDuration = Date.now() - timingBeforeReadState;
+
       if (stored && stored.length > 0) {
         Y.applyUpdate(ydoc, stored);
 
@@ -344,6 +352,11 @@ export const persistence = {
         current = await persistence.update(ydoc, current);
       }
     }, 2000, { maxWait: 10000 }));
+
+    const timingMap = new Map();
+    timingMap.set('timingReadStateDuration', timingReadStateDuration);
+    timingMap.set('timingDaAdminGetDuration', timingDaAdminGetDuration);
+    return timingMap;
   },
 };
 
@@ -403,7 +416,7 @@ export class WSSharedDoc extends Y.Doc {
  * @param {boolean} gc - whether garbage collection is enabled
  * @returns The Yjs document object, which may be shared across multiple sockets.
  */
-export const getYDoc = async (docname, conn, env, storage, gc = true) => {
+export const getYDoc = async (docname, conn, env, storage, timingData, gc = true) => {
   let doc = docs.get(docname);
   if (doc === undefined) {
     // The doc is not yet in the cache, create a new one.
@@ -426,7 +439,10 @@ export const getYDoc = async (docname, conn, env, storage, gc = true) => {
 
   // We wait for the promise, for second and subsequent connections to the same doc, this will
   // already be resolved.
-  await doc.promise;
+  const timings = await doc.promise;
+  if (timingData) {
+    timings.forEach((v, k) => timingData.set(k, v));
+  }
   return doc;
 };
 
@@ -498,10 +514,12 @@ export const invalidateFromAdmin = async (docName) => {
  * @returns {Promise<void>} - The return value of this
  */
 export const setupWSConnection = async (conn, docName, env, storage) => {
+  const timingData = new Map();
+
   // eslint-disable-next-line no-param-reassign
   conn.binaryType = 'arraybuffer';
   // get doc, initialize if it does not exist yet
-  const doc = await getYDoc(docName, conn, env, storage, true);
+  const doc = await getYDoc(docName, conn, env, storage, timingData, true);
 
   // listen and reply to events
   conn.addEventListener('message', (message) => messageListener(conn, doc, new Uint8Array(message.data)));
@@ -527,4 +545,6 @@ export const setupWSConnection = async (conn, docName, env, storage) => {
       send(doc, conn, encoding.toUint8Array(encoder));
     }
   }
+
+  return timingData;
 };
