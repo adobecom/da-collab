@@ -781,7 +781,10 @@ describe('Collab Test Suite', () => {
 
     try {
       const bindCalls = [];
-      persistence.bindState = async (nm, d, c, s) => bindCalls.push({nm, d, c, s});
+      persistence.bindState = async (nm, d, c, s) => {
+        bindCalls.push({nm, d, c, s});
+        return new Map();
+      }
 
       const docName = 'https://somewhere.com/somedoc.html';
       const eventListeners = new Map();
@@ -826,7 +829,7 @@ describe('Collab Test Suite', () => {
     const savedBind = persistence.bindState;
 
     try {
-      persistence.bindState = async (nm, d, c, s) => {};
+      persistence.bindState = async (nm, d, c, s) => new Map();
 
       const docName = 'https://somewhere.com/myotherdoc.html';
       const closeCalls = [];

@@ -220,7 +220,10 @@ describe('Worker test suite', () => {
 
     try {
       const bindCalled = [];
-      persistence.bindState = async (nm, d, c) => bindCalled.push({nm, d, c});
+      persistence.bindState = async (nm, d, c) => {
+        bindCalled.push({nm, d, c});
+        return new Map();
+      }
 
       const wspCalled = [];
       const wsp0 = {};
