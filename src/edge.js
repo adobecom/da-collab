@@ -94,6 +94,9 @@ async function handleApiCall(url, request, env) {
 // This is where the requests for the worker come in. They can either be pure API requests or
 // requests to set up a session with a Durable Object through a Yjs WebSocket.
 export async function handleApiRequest(request, env) {
+  let timingDaAdminHeadDuration;
+  const timingStartTime = Date.now();
+
   // We've received a pure API request - handle it and return.
   const url = new URL(request.url);
   if (url.pathname.startsWith('/api/')) {
@@ -127,7 +130,9 @@ export async function handleApiRequest(request, env) {
       opts.headers = new Headers({ Authorization: auth });
     }
 
+    const timingBeforeDaAdminHead = Date.now();
     const initialReq = await env.daadmin.fetch(docName, opts);
+    timingDaAdminHeadDuration = Date.now() - timingBeforeDaAdminHead;
 
     if (!initialReq.ok && initialReq.status !== 404) {
       // eslint-disable-next-line no-console
@@ -140,6 +145,7 @@ export async function handleApiRequest(request, env) {
     return new Response('unable to get resource', { status: 500 });
   }
 
+  const timingBeforeDocRoomGet = Date.now();
   // Each Durable Object has a 256-bit unique ID. Route the request based on the path.
   const id = env.rooms.idFromName(docName);
 
@@ -150,11 +156,17 @@ export async function handleApiRequest(request, env) {
   // created on-demand when the ID is first used, there's nothing to wait for anyway; we know
   // an object will be available somewhere to receive our requests.
   const roomObject = env.rooms.get(id);
+  const timingDocRoomGetDuration = Date.now() - timingBeforeDocRoomGet;
 
   // eslint-disable-next-line no-console
   console.log(`FETCHING: ${docName} ${id}`);
 
-  const headers = [...request.headers, ['X-collab-room', docName]];
+  const headers = [...request.headers,
+    ['X-collab-room', docName],
+    ['X-timing-start', timingStartTime],
+    ['X-timing-da-admin-head-duration', timingDaAdminHeadDuration],
+    ['X-timing-docroom-get-duration', timingDocRoomGetDuration],
+  ];
   if (auth) {
     headers.push(['Authorization', auth]);
   }
@@ -248,6 +260,7 @@ export class DocRoom {
       return new Response('expected docName', { status: 400 });
     }
 
+    const timingBeforeSetupWebsocket = Date.now();
     // To accept the WebSocket request, we create a WebSocketPair (which is like a socketpair,
     // i.e. two WebSockets that talk to each other), we return one end of the pair in the
     // response, and we operate on the other end. Note that this API is not part of the
@@ -256,10 +269,20 @@ export class DocRoom {
     const pair = DocRoom.newWebSocketPair();
 
     // We're going to take pair[1] as our end, and return pair[0] to the client.
-    await this.handleSession(pair[1], docName, auth);
+    const timingData = await this.handleSession(pair[1], docName, auth);
+    const timingSetupWebSocketDuration = Date.now() - timingBeforeSetupWebsocket;
+
+    const reqHeaders = request.headers;
+    const respheaders = new Headers();
+    respheaders.set('X-1-timing-da-admin-head-duration', reqHeaders.get('X-timing-da-admin-head-duration'));
+    respheaders.set('X-2-timing-docroom-get-duration', reqHeaders.get('X-timing-docroom-get-duration'));
+    respheaders.set('X-4-timing-da-admin-get-duration', timingData.get('timingDaAdminGetDuration'));
+    respheaders.set('X-5-timing-read-state-duration', timingData.get('timingReadStateDuration'));
+    respheaders.set('X-7-timing-setup-websocket-duration', timingSetupWebSocketDuration);
+    respheaders.set('X-9-timing-full-duration', Date.now() - reqHeaders.get('X-timing-start'));
 
     // Now we return the other end of the pair to the client.
-    return new Response(null, { status: successCode, webSocket: pair[0] });
+    return new Response(null, { status: successCode, headers: respheaders, webSocket: pair[0] });
   }
 
   /**
@@ -277,6 +300,7 @@ export class DocRoom {
     // eslint-disable-next-line no-console
     console.log(`setupWSConnection ${docName} with auth(${webSocket.auth
       ? webSocket.auth.substring(0, webSocket.auth.indexOf(' ')) : 'none'})`);
-    await setupWSConnection(webSocket, docName, this.env, this.storage);
+    const timingData = await setupWSConnection(webSocket, docName, this.env, this.storage);
+    return timingData;
   }
 }
