@@ -214,9 +214,32 @@ describe('Collab Test Suite', () => {
       assert.equal(opts.headers.get('authorization'), 'auth');
       assert.equal(opts.headers.get('X-DA-Initiator'), 'collab');
       assert.equal(await opts.body.get('data').text(), 'test');
+      return { ok: false, status: 200, statusText: 'okidoki'};
+    };
+    const result = await persistence.put({
+      name: 'foo',
+      conns: new Map().set({ auth: 'auth', authActions: ['read', 'write'] }, new Set()),
+      daadmin
+    }, 'test');
+    assert.equal(result.ok, false);
+    assert.equal(result.status, 200);
+    assert.equal(result.statusText, 'okidoki');
+  });
+
+  it('Test persistence put auth no perm', async () => {
+    const daadmin = {};
+    daadmin.fetch = async (url, opts) => {
+      assert.equal(url, 'bar');
+      assert.equal(opts.method, 'PUT');
+      assert(!opts.headers);
+      assert.equal(await opts.body.get('data').text(), 'toast');
       return { ok: false, status: 401, statusText: 'Unauth'};
     };
-    const result = await persistence.put({ name: 'foo', conns: new Map().set({ auth: 'auth' }, new Set()), daadmin }, 'test');
+    const result = await persistence.put({
+      name: 'bar',
+      conns: new Map().set({ auth: 'auth', authActions: ['read'] }, new Set()),
+      daadmin
+    }, 'toast');
     assert.equal(result.ok, false);
     assert.equal(result.status, 401);
     assert.equal(result.statusText, 'Unauth');
@@ -407,7 +430,8 @@ describe('Collab Test Suite', () => {
     const testYDoc = new Y.Doc();
     testYDoc.daadmin = 'daadmin';
     const mockConn = {
-      auth: 'myauth'
+      auth: 'myauth',
+      authActions: ['read']
     };
     pss.setYDoc(docName, testYDoc);
 
