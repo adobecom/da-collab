@@ -103,6 +103,7 @@ export async function handleApiRequest(request, env) {
     return handleApiCall(url, request, env);
   }
 
+  let authActions;
   const auth = url.searchParams.get('Authorization');
 
   // We need to massage the path somewhat because on connections from localhost safari sends
@@ -139,6 +140,9 @@ export async function handleApiRequest(request, env) {
       console.log(`${initialReq.status} - ${initialReq.statusText}`);
       return new Response('unable to get resource', { status: initialReq.status });
     }
+
+    const daActions = initialReq.headers.get('X-da-actions') ?? '';
+    [, authActions] = daActions.split('=');
   } catch (err) {
     // eslint-disable-next-line no-console
     console.log(err);
@@ -166,6 +170,7 @@ export async function handleApiRequest(request, env) {
     ['X-timing-start', timingStartTime],
     ['X-timing-da-admin-head-duration', timingDaAdminHeadDuration],
     ['X-timing-docroom-get-duration', timingDocRoomGetDuration],
+    ['X-auth-actions', authActions],
   ];
   if (auth) {
     headers.push(['Authorization', auth]);
@@ -254,6 +259,7 @@ export class DocRoom {
       return new Response('expected websocket', { status: 400 });
     }
     const auth = request.headers.get('Authorization');
+    const authActions = request.headers.get('X-auth-actions') ?? '';
     const docName = request.headers.get('X-collab-room');
 
     if (!docName) {
@@ -269,7 +275,7 @@ export class DocRoom {
     const pair = DocRoom.newWebSocketPair();
 
     // We're going to take pair[1] as our end, and return pair[0] to the client.
-    const timingData = await this.handleSession(pair[1], docName, auth);
+    const timingData = await this.handleSession(pair[1], docName, auth, authActions);
     const timingSetupWebSocketDuration = Date.now() - timingBeforeSetupWebsocket;
 
     const reqHeaders = request.headers;
@@ -291,12 +297,14 @@ export class DocRoom {
    * @param {string} docName - The document name
    * @param {string} auth - The authorization header
    */
-  async handleSession(webSocket, docName, auth) {
+  async handleSession(webSocket, docName, auth, authActions) {
     // Accept our end of the WebSocket. This tells the runtime that we'll be terminating the
     // WebSocket in JavaScript, not sending it elsewhere.
     webSocket.accept();
     // eslint-disable-next-line no-param-reassign
     webSocket.auth = auth;
+    // eslint-disable-next-line no-param-reassign
+    webSocket.authActions = authActions.split(',');
     // eslint-disable-next-line no-console
     console.log(`setupWSConnection ${docName} with auth(${webSocket.auth
       ? webSocket.auth.substring(0, webSocket.auth.indexOf(' ')) : 'none'})`);
