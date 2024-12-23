@@ -202,6 +202,7 @@ export const persistence = {
 
     const opts = { method: 'PUT', body: formData };
     const auth = Array.from(ydoc.conns.keys())
+      .filter((con) => con.authActions.includes('write'))
       .map((con) => con.auth);
 
     if (auth.length > 0) {
