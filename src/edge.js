@@ -303,8 +303,11 @@ export class DocRoom {
     webSocket.accept();
     // eslint-disable-next-line no-param-reassign
     webSocket.auth = auth;
-    // eslint-disable-next-line no-param-reassign
-    webSocket.authActions = authActions.split(',');
+
+    if (!authActions.split(',').includes('write')) {
+      // eslint-disable-next-line no-param-reassign
+      webSocket.readOnly = true;
+    }
     // eslint-disable-next-line no-console
     console.log(`setupWSConnection ${docName} with auth(${webSocket.auth
       ? webSocket.auth.substring(0, webSocket.auth.indexOf(' ')) : 'none'})`);

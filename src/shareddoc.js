@@ -202,7 +202,7 @@ export const persistence = {
 
     const opts = { method: 'PUT', body: formData };
     const auth = Array.from(ydoc.conns.keys())
-      .filter((con) => con.authActions.includes('write'))
+      .filter((con) => con.readOnly !== true)
       .map((con) => con.auth);
 
     if (auth.length > 0) {
@@ -454,6 +454,25 @@ export const getYDoc = async (docname, conn, env, storage, timingData, gc = true
 // For testing
 export const setYDoc = (docname, ydoc) => docs.set(docname, ydoc);
 
+// This read sync message handles readonly connections
+const readSyncMessage = (decoder, encoder, doc, readOnly, transactionOrigin) => {
+  const messageType = decoding.readVarUint(decoder);
+  switch (messageType) {
+    case syncProtocol.messageYjsSyncStep1:
+      syncProtocol.readSyncStep1(decoder, encoder, doc);
+      break;
+    case syncProtocol.messageYjsSyncStep2:
+      if (!readOnly) syncProtocol.readSyncStep2(decoder, doc, transactionOrigin);
+      break;
+    case syncProtocol.messageYjsUpdate:
+      if (!readOnly) syncProtocol.readUpdate(decoder, doc, transactionOrigin);
+      break;
+    default:
+      throw new Error('Unknown message type');
+  }
+  return messageType;
+};
+
 export const messageListener = (conn, doc, message) => {
   try {
     const encoder = encoding.createEncoder();
@@ -462,7 +481,7 @@ export const messageListener = (conn, doc, message) => {
     switch (messageType) {
       case messageSync:
         encoding.writeVarUint(encoder, messageSync);
-        syncProtocol.readSyncMessage(decoder, encoder, doc, conn);
+        readSyncMessage(decoder, encoder, doc, conn.readOnly);
 
         // If the `encoder` only contains the type of reply message and no
         // message, there is no need to send the message. When `encoder` only
