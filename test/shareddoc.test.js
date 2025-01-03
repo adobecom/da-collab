@@ -237,7 +237,7 @@ describe('Collab Test Suite', () => {
     };
     const result = await persistence.put({
       name: 'bar',
-      conns: new Map().set({ auth: 'auth', authActions: ['read'] }, new Set()),
+      conns: new Map().set({ auth: 'auth', readOnly: true }, new Set()),
       daadmin
     }, 'toast');
     assert.equal(result.ok, false);
