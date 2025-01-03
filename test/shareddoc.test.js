@@ -931,7 +931,7 @@ describe('Collab Test Suite', () => {
     }
   });
 
-  it('Test message listener Sync', () => {
+  it('Test Sync Step1', () => {
     const connSent = []
     const conn = {
       readyState: 0, // wsReadyState
@@ -952,6 +952,108 @@ describe('Collab Test Suite', () => {
     for (let i = 0; i < emitted.length; i++) {
       assert(emitted[i].t !== 'error');
     }
+  });
+
+  it('Test Sync Step1 readonly connection', () => {
+    const connSent = []
+    const conn = {
+      readyState: 0, // wsReadyState
+      send(m, r) { connSent.push({m, r}); },
+      readOnly: true,
+    };
+
+    const emitted = []
+    const doc = new Y.Doc();
+    doc.emit = (t, e) => emitted.push({t, e});
+    doc.getMap('foo').set('bar', 'hello');
+
+    const message = [0, 0, 1, 0];
+
+    messageListener(conn, doc, new Uint8Array(message));
+    assert.equal(1, connSent.length, "Readonly connection should still call sync step 1");
+    assert(isSubArray(connSent[0].m, new Uint8Array(getAsciiChars('hello'))));
+
+    for (let i = 0; i < emitted.length; i++) {
+      assert(emitted[i].t !== 'error');
+    }
+  });
+
+  const testSyncStep2 = async (doc, readonly) => {
+    const ss2Called = [];
+    const mockSS2 = (dec, doc) => {
+      ss2Called.push({dec, doc});
+   }
+
+    const shd = await esmock(
+      '../src/shareddoc.js', {
+        'y-protocols/sync.js': {
+          readSyncStep2: mockSS2
+        }
+      });
+
+    const conn = {};
+    if (readonly) {
+      conn.readOnly = true;
+    }
+
+    const message = [0, 1, 1, 0];
+
+    assert.equal(ss2Called.length, 0, 'Precondition');
+    shd.messageListener(conn, doc, new Uint8Array(message));
+    return ss2Called;
+  };
+
+  it('Test Sync Step2', async () => {
+    const doc = new Y.Doc();
+    const ss2Called = await testSyncStep2(doc, false);
+    assert.equal(ss2Called.length, 1);
+    assert(ss2Called[0].dec);
+    assert(ss2Called[0].doc === doc);
+  });
+
+  it('Test Sync Step2 readonly connection', async () => {
+    const doc = new Y.Doc();
+    const ss2Called = await testSyncStep2(doc, true);
+    assert.equal(ss2Called.length, 0, 'Sync step 2 should not be called for a readonly connection');
+  });
+
+  const testYjsUpdate = async (doc, readonly) => {
+    const updCalled = [];
+    const mockUpd = (dec, doc) => {
+      updCalled.push({dec, doc});
+   }
+
+    const shd = await esmock(
+      '../src/shareddoc.js', {
+        'y-protocols/sync.js': {
+          readUpdate: mockUpd
+        }
+      });
+
+    const conn = {};
+    if (readonly) {
+      conn.readOnly = true;
+    }
+
+    const message = [0, 2, 1, 0];
+
+    assert.equal(updCalled.length, 0, 'Precondition');
+    shd.messageListener(conn, doc, new Uint8Array(message));
+    return updCalled;
+  };
+
+  it('Test YJS Update', async () => {
+    const doc = new Y.Doc();
+    const updCalled = await testYjsUpdate(doc, false);
+    assert.equal(updCalled.length, 1);
+    assert(updCalled[0].dec);
+    assert(updCalled[0].doc === doc);
+  });
+
+  it('Test YJS Update readonly connection', async () => {
+    const doc = new Y.Doc();
+    const updCalled = await testYjsUpdate(doc, true);
+    assert.equal(updCalled.length, 0, 'YJS update should not be called for a readonly connection');
   });
 
   it('Test message listener awareness', () => {
