@@ -640,6 +640,50 @@ describe('Collab Test Suite', () => {
     }
   });
 
+  it('test bind to empty doc that was stored before updates ydoc', async () => {
+    const docName = 'https://admin.da.live/source/foo.html';
+
+    const serviceBinding = {
+      fetch: async (u) => {
+        if (u === docName) {
+          return { status: 404 };
+        }
+      }
+    };
+
+    const ydoc = new Y.Doc();
+    ydoc.daadmin = serviceBinding;
+    setYDoc(docName, ydoc);
+    const conn = {};
+
+    const deleteAllCalled = [];
+    const stored = new Map();
+    stored.set('docstore', new Uint8Array([254, 255]));
+    stored.set('chunks', 17); // should be ignored
+    stored.set('doc', docName);
+    const storage = {
+      deleteAll: async () => deleteAllCalled.push(true),
+      list: async () => stored,
+    };
+
+    const setTimeoutCalled = [];
+    const savedSetTimeout = globalThis.setTimeout;
+    try {
+      globalThis.setTimeout = (f) => {
+        // Restore the global function
+        globalThis.setTimeout = savedSetTimeout;
+        setTimeoutCalled.push('setTimeout');
+        f();
+      };
+
+      await persistence.bindState(docName, ydoc, conn, storage);
+      assert.deepStrictEqual([true], deleteAllCalled);
+      assert.equal(1, setTimeoutCalled.length, 'SetTimeout should have been called to update the doc');
+    } finally {
+      globalThis.setTimeout = savedSetTimeout;
+    }
+  });
+
   it('test persist state in worker storage on update', async () => {
     const docName = 'https://admin.da.live/source/foo/bar.html';
 

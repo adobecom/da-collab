@@ -275,20 +275,22 @@ export const persistence = {
       const timingBeforeDaAdminGet = Date.now();
       current = await persistence.get(docName, conn.auth, ydoc.daadmin);
       timingDaAdminGetDuration = Date.now() - timingBeforeDaAdminGet;
-      if (current === null) {
-        // The document isn't there any more, clear the local storage
-        await storage.deleteAll();
-
-        current = EMPTY_DOC;
-        newDoc = true;
-      }
 
       const timingBeforeReadState = Date.now();
       // Read the stored state from internal worker storage
       const stored = await readState(docName, storage);
       timingReadStateDuration = Date.now() - timingBeforeReadState;
 
-      if (stored && stored.length > 0) {
+      if (current === null) {
+        if (!stored) {
+          // This is a new document, it wasn't present in local storage
+          newDoc = true;
+        }
+        // if stored has a value, the document previously existed but was deleted
+
+        current = EMPTY_DOC;
+        await storage.deleteAll();
+      } else if (stored && stored.length > 0) {
         Y.applyUpdate(ydoc, stored);
 
         // Check if the state from the worker storage is the same as the current state in da-admin.
@@ -301,7 +303,9 @@ export const persistence = {
           // eslint-disable-next-line no-console
           console.log('Restored from worker persistence', docName);
         }
-      } else if (newDoc === true) {
+      }
+
+      if (newDoc === true) {
         // There is no stored state and the document is empty, which means
         // we have a new doc here, which doesn't need to be restored from da-admin
         restored = true;
