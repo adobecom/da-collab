@@ -304,7 +304,7 @@ describe('Collab Test Suite', () => {
     assert(!calledCloseCon);
   });
 
-  it('Test persistence update closes all on auth failure', async () => {
+  async function testCloseAllOnAuthFailure(httpError) {
     const mockDoc2Aem = () => 'Svr content update';
     const pss = await esmock(
       '../src/shareddoc.js', {
@@ -325,7 +325,7 @@ describe('Collab Test Suite', () => {
       assert.equal(ydoc, mockYDoc);
       assert.equal(content, 'Svr content update');
       called = true;
-      return { ok: false, status: 401, statusText: 'Unauthorized'};
+      return { ok: false, status: httpError, statusText: 'Unauthorized'};
     }
 
     let calledCloseCon = false;
@@ -339,6 +339,11 @@ describe('Collab Test Suite', () => {
     assert.equal(result, 'Svr content');
     assert(called);
     assert(calledCloseCon);
+  }
+
+  it('Test persistence update closes all on auth failure', async () => {
+    await testCloseAllOnAuthFailure(401);
+    await testCloseAllOnAuthFailure(403);
   });
 
   it('Test invalidateFromAdmin', async () => {

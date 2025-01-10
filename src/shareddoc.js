@@ -237,7 +237,7 @@ export const persistence = {
         const { ok, status, statusText } = await persistence.put(ydoc, content);
 
         if (!ok) {
-          closeAll = status === 401;
+          closeAll = (status === 401 || status === 403);
           throw new Error(`${status} - ${statusText}`);
         }
         // eslint-disable-next-line no-console
