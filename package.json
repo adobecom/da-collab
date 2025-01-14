@@ -16,7 +16,6 @@
     "deploy:production": "node prepare-deploy.js && wrangler deploy -c wrangler-versioned.toml",
     "semantic-release": "semantic-release",
     "semantic-release-dry": "semantic-release --dry-run --no-ci --branches $CI_BRANCH"
-
   },
   "mocha": {
     "reporter": "mocha-multi-reporters",

@@ -198,12 +198,45 @@ describe('Collab Test Suite', () => {
       assert.equal(opts.method, 'PUT');
       assert(opts.headers === undefined);
       assert.equal(await opts.body.get('data').text(), 'test');
+      return { ok: true, status: 200, statusText: 'OK - Stored'};
+    };
+    const conns = new Map();
+    // conns.set({}, new Set());
+    const result = await persistence.put({ name: 'foo', conns, daadmin }, 'test');
+    assert(result.ok);
+    assert.equal(result.status, 200);
+    assert.equal(result.statusText, 'OK - Stored');
+  });
+
+  it('Test persistence put ok with auth', async () => {
+    const daadmin = {};
+    daadmin.fetch = async (url, opts) => {
+      assert.equal(url, 'foo');
+      assert.equal(opts.method, 'PUT');
+      assert.equal('myauth', opts.headers.get('Authorization'));
+      assert.equal('collab', opts.headers.get('X-DA-Initiator'));
+      assert.equal(await opts.body.get('data').text(), 'test');
+      return { ok: true, status: 200, statusText: 'OK - Stored too'};
+    };
+    const conns = new Map();
+    conns.set({ auth: 'myauth' }, new Set());
+    const result = await persistence.put({ name: 'foo', conns, daadmin }, 'test');
+    assert(result.ok);
+    assert.equal(result.status, 200);
+    assert.equal(result.statusText, 'OK - Stored too');
+  });
+
+  it('Test persistence readonly does not put but is ok', async () => {
+    const daadmin = {};
+    daadmin.fetch = async (url, opts) => {
+      assert.equal(url, 'foo');
+      assert.equal(opts.method, 'PUT');
+      assert(opts.headers === undefined);
+      assert.equal(await opts.body.get('data').text(), 'test');
       return { ok: true, status: 200, statusText: 'OK'};
     };
     const result = await persistence.put({ name: 'foo', conns: new Map(), daadmin }, 'test');
-    assert.equal(result.ok, true);
-    assert.equal(result.status, 200);
-    assert.equal(result.statusText, 'OK');
+    assert(result.ok);
   });
 
   it('Test persistence put auth', async () => {
@@ -214,35 +247,31 @@ describe('Collab Test Suite', () => {
       assert.equal(opts.headers.get('authorization'), 'auth');
       assert.equal(opts.headers.get('X-DA-Initiator'), 'collab');
       assert.equal(await opts.body.get('data').text(), 'test');
-      return { ok: false, status: 200, statusText: 'okidoki'};
+      return { ok: true, status: 200, statusText: 'okidoki'};
     };
     const result = await persistence.put({
       name: 'foo',
       conns: new Map().set({ auth: 'auth', authActions: ['read', 'write'] }, new Set()),
       daadmin
     }, 'test');
-    assert.equal(result.ok, false);
+    assert(result.ok);
     assert.equal(result.status, 200);
     assert.equal(result.statusText, 'okidoki');
   });
 
   it('Test persistence put auth no perm', async () => {
+    const fetchCalled = []
     const daadmin = {};
     daadmin.fetch = async (url, opts) => {
-      assert.equal(url, 'bar');
-      assert.equal(opts.method, 'PUT');
-      assert(!opts.headers);
-      assert.equal(await opts.body.get('data').text(), 'toast');
-      return { ok: false, status: 401, statusText: 'Unauth'};
+      fetchCalled.push('true');
     };
     const result = await persistence.put({
       name: 'bar',
       conns: new Map().set({ auth: 'auth', readOnly: true }, new Set()),
       daadmin
     }, 'toast');
-    assert.equal(result.ok, false);
-    assert.equal(result.status, 401);
-    assert.equal(result.statusText, 'Unauth');
+    assert(result.ok);
+    assert.equal(fetchCalled.length, 0, 'Should not have called fetch');
   });
 
   it('Test persistence update does not put if no change', async () => {
