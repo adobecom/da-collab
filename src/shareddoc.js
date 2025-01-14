@@ -201,7 +201,14 @@ export const persistence = {
     formData.append('data', blob);
 
     const opts = { method: 'PUT', body: formData };
-    const auth = Array.from(ydoc.conns.keys())
+    const keys = Array.from(ydoc.conns.keys());
+    const allReadOnly = keys.length > 0 && keys.every((con) => con.readOnly === true);
+    if (allReadOnly) {
+      // eslint-disable-next-line no-console
+      console.log('All connections are read only, not storing');
+      return { ok: true };
+    }
+    const auth = keys
       .filter((con) => con.readOnly !== true)
       .map((con) => con.auth);
 
