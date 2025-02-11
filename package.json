@@ -26,12 +26,12 @@
     "mocha": "^10.2.0",
     "mocha-junit-reporter": "^2.2.1",
     "mocha-multi-reporters": "^1.5.1",
-    "wrangler": "^3.107.3"
+    "wrangler": "^3.99.0"
   },
   "dependencies": {
+    "lib0": "^0.2.52",
     "hast-util-from-html": "^2.0.1",
     "hast-util-select": "^6.0.2",
-    "lib0": "^0.2.52",
     "lodash": "^4.17.21",
     "prosemirror-model": "^1.19.0",
     "prosemirror-schema-basic": "^1.2.1",
