@@ -192,7 +192,7 @@ it('Test complex block roundtrip', async () => {
   const html =`
 <body>
   <header></header>
-  <main><div><picture><source srcset="./media_133f71a3e1a71c230536dd8e163189cd5c6269173.png?width=750&format=png&optimize=medium"><source srcset="./media_133f71a3e1a71c230536dd8e163189cd5c6269173.png?width=750&format=png&optimize=medium" media="(min-width: 600px)"><img src="./media_133f71a3e1a71c230536dd8e163189cd5c6269173.png?width=750&format=png&optimize=medium" alt="Wheatley Vodka" loading="lazy"></picture><h1>The truth is in the taste</h1><h2>10 times distilled for<br>ultra-smoothness</h2><p><a href="/about-wheatley">Learn About Wheatley Vodka</a></p><h3>10 times distilled and tripled filtered for an ultra-smooth taste.</h3></div><div><div class="callout"><div><div><h2>An award-winning vodka from the world’s most award-winning distillery.</h2></div></div><div><div><picture><source srcset="./media_12c307c8546ea3d44f485807a7ce703751cf23d4c.png?width=750&format=png&optimize=medium"><source srcset="./media_12c307c8546ea3d44f485807a7ce703751cf23d4c.png?width=750&format=png&optimize=medium" media="(min-width: 600px)"><img src="./media_12c307c8546ea3d44f485807a7ce703751cf23d4c.png?width=750&format=png&optimize=medium" alt="" loading="lazy"></picture></div><div><picture><source srcset="./media_1ac96e8af760937793baa1fa6c49de457f8552813.png?width=750&format=png&optimize=medium"><source srcset="./media_1ac96e8af760937793baa1fa6c49de457f8552813.png?width=750&format=png&optimize=medium" media="(min-width: 600px)"><img src="./media_1ac96e8af760937793baa1fa6c49de457f8552813.png?width=750&format=png&optimize=medium" alt="" loading="lazy"></picture></div></div></div></div><div><div class="columns"><div><div><picture><source srcset="./media_117154c8890aced2855ddf92c698df8789757ebf4.png?width=750&format=png&optimize=medium"><source srcset="./media_117154c8890aced2855ddf92c698df8789757ebf4.png?width=750&format=png&optimize=medium" media="(min-width: 600px)"><img src="./media_117154c8890aced2855ddf92c698df8789757ebf4.png?width=750&format=png&optimize=medium" alt="Wheatley Vodka" loading="lazy"></picture></div><div><h2>Buffalo Trace Distillery - 200 years of distilling experience</h2><p>When you set out to craft a vodka from scratch, 200 years of distilling experience comes in handy. Harlen Wheatley is the Master Distiller at Buffalo Trace Distillery, America’s oldest continually-operated distillery—and the world’s most decorated. It all comes down to a vodka that’s deliberately crafted using centuries of spirit-making knowledge.</p><p><a href="/locator">Find Wheatley Near You</a></p></div></div></div><div class="section-metadata"><div><div><p>style</p></div><div><p>reverse</p></div></div><div><div><p>background-image</p></div><div><picture><source srcset="./media_126e3f942f3105fc9f0a3e18d3d91f91fe9e32d9c.png?width=750&format=png&optimize=medium"><source srcset="./media_126e3f942f3105fc9f0a3e18d3d91f91fe9e32d9c.png?width=750&format=png&optimize=medium" media="(min-width: 600px)"><img src="./media_126e3f942f3105fc9f0a3e18d3d91f91fe9e32d9c.png?width=750&format=png&optimize=medium" alt="" loading="lazy"></picture></div></div></div></div><div><div class="featured plain"><div><div><ul><li><a href="/cocktails/cucumber-collins">Cucumber Collins</a></li><li><a href="/cocktails/wheatley-vodka-club">Wheatley Vodka Club</a></li><li><a href="/cocktails/la-luna-rossa">La Luna Rossa</a></li><li><a href="/cocktails/flatiron-flip">Flatiron Flip</a></li><li><a href="/cocktails/romapolitan">Romapolitan</a></li><li><a href="/cocktails">All Cocktails</a></li></ul></div></div></div></div><div><div class="buy"></div></div><div><h2>Follow us on Instagram</h2><p><a href="https://curator.io">Powered by Curator.io</a></p></div><div><picture><source srcset="./media_180bc2eb557a14b99d41d0e539946e44c45b9630e.png?width=750&format=png&optimize=medium"><source srcset="./media_180bc2eb557a14b99d41d0e539946e44c45b9630e.png?width=750&format=png&optimize=medium" media="(min-width: 600px)"><img src="./media_180bc2eb557a14b99d41d0e539946e44c45b9630e.png?width=750&format=png&optimize=medium" alt="" loading="lazy"></picture></div></main>
+  <main><div><picture><source srcset="./media_133f71a3e1a71c230536dd8e163189cd5c6269173.png?width=750&format=png&optimize=medium"><source srcset="./media_133f71a3e1a71c230536dd8e163189cd5c6269173.png?width=750&format=png&optimize=medium" media="(min-width: 600px)"><img src="./media_133f71a3e1a71c230536dd8e163189cd5c6269173.png?width=750&format=png&optimize=medium" alt="Wheatley Vodka" loading="lazy"></picture><h1>The truth is in the taste</h1><h2>10 times distilled for<br>ultra-smoothness</h2><p><a href="/about-wheatley">Learn About Wheatley Vodka</a></p><h3>10 times distilled and tripled filtered for an ultra-smooth taste.</h3></div><div><div class="callout"><div><div><h2>An award-winning vodka from the world's most award-winning distillery.</h2></div></div><div><div><picture><source srcset="./media_12c307c8546ea3d44f485807a7ce703751cf23d4c.png?width=750&format=png&optimize=medium"><source srcset="./media_12c307c8546ea3d44f485807a7ce703751cf23d4c.png?width=750&format=png&optimize=medium" media="(min-width: 600px)"><img src="./media_12c307c8546ea3d44f485807a7ce703751cf23d4c.png?width=750&format=png&optimize=medium" alt="" loading="lazy"></picture></div><div><picture><source srcset="./media_1ac96e8af760937793baa1fa6c49de457f8552813.png?width=750&format=png&optimize=medium"><source srcset="./media_1ac96e8af760937793baa1fa6c49de457f8552813.png?width=750&format=png&optimize=medium" media="(min-width: 600px)"><img src="./media_1ac96e8af760937793baa1fa6c49de457f8552813.png?width=750&format=png&optimize=medium" alt="" loading="lazy"></picture></div></div></div></div><div><div class="columns"><div><div><picture><source srcset="./media_117154c8890aced2855ddf92c698df8789757ebf4.png?width=750&format=png&optimize=medium"><source srcset="./media_117154c8890aced2855ddf92c698df8789757ebf4.png?width=750&format=png&optimize=medium" media="(min-width: 600px)"><img src="./media_117154c8890aced2855ddf92c698df8789757ebf4.png?width=750&format=png&optimize=medium" alt="Wheatley Vodka" loading="lazy"></picture></div><div><h2>Buffalo Trace Distillery - 200 years of distilling experience</h2><p>When you set out to craft a vodka from scratch, 200 years of distilling experience comes in handy. Harlen Wheatley is the Master Distiller at Buffalo Trace Distillery, America's oldest continually-operated distillery—and the world's most decorated. It all comes down to a vodka that's deliberately crafted using centuries of spirit-making knowledge.</p><p><a href="/locator">Find Wheatley Near You</a></p></div></div></div><div class="section-metadata"><div><div><p>style</p></div><div><p>reverse</p></div></div><div><div><p>background-image</p></div><div><picture><source srcset="./media_126e3f942f3105fc9f0a3e18d3d91f91fe9e32d9c.png?width=750&format=png&optimize=medium"><source srcset="./media_126e3f942f3105fc9f0a3e18d3d91f91fe9e32d9c.png?width=750&format=png&optimize=medium" media="(min-width: 600px)"><img src="./media_126e3f942f3105fc9f0a3e18d3d91f91fe9e32d9c.png?width=750&format=png&optimize=medium" alt="" loading="lazy"></picture></div></div></div></div><div><div class="featured plain"><div><div><ul><li><a href="/cocktails/cucumber-collins">Cucumber Collins</a></li><li><a href="/cocktails/wheatley-vodka-club">Wheatley Vodka Club</a></li><li><a href="/cocktails/la-luna-rossa">La Luna Rossa</a></li><li><a href="/cocktails/flatiron-flip">Flatiron Flip</a></li><li><a href="/cocktails/romapolitan">Romapolitan</a></li><li><a href="/cocktails">All Cocktails</a></li></ul></div></div></div></div><div><div class="buy"></div></div><div><h2>Follow us on Instagram</h2><p><a href="https://curator.io">Powered by Curator.io</a></p></div><div><picture><source srcset="./media_180bc2eb557a14b99d41d0e539946e44c45b9630e.png?width=750&format=png&optimize=medium"><source srcset="./media_180bc2eb557a14b99d41d0e539946e44c45b9630e.png?width=750&format=png&optimize=medium" media="(min-width: 600px)"><img src="./media_180bc2eb557a14b99d41d0e539946e44c45b9630e.png?width=750&format=png&optimize=medium" alt="" loading="lazy"></picture></div></main>
   <footer></footer>
 </body>
 `;
@@ -290,7 +290,7 @@ assert.equal(result, html);
           </div>
           <div>
             <blockquote data-id="bq-id">
-              <p>Words can be like X-rays, if you use them properly—they’ll go through anything. You read and you’re pierced.</p>
+              <p>Words can be like X-rays, if you use them properly—they'll go through anything. You read and you're pierced.</p>
               <p>—Aldous Huxley, Brave New World</p>
             </blockquote>
           </div>
@@ -407,6 +407,155 @@ assert.equal(result, html);
     const divEl = fragment.children[0];
     assert.equal('div', divEl.type);
     assert.equal('myblock', divEl.attributes.class);
+  });
+
+  it('image links', async () => {
+    let html = `
+      <body>
+        <header></header>
+        <main>
+          <div>
+            <div class="cards video-hover-card">
+        <div>
+          <div><a href="https://www.google.com">
+              <picture>
+                <source
+                  srcset="https://publish-p107857-e1299068.adobeaemcloud.com/content/dam/jmp/images/design/home/jmp-anthem-thumbnail.png">
+                <source
+                  srcset="https://publish-p107857-e1299068.adobeaemcloud.com/content/dam/jmp/images/design/home/jmp-anthem-thumbnail.png"
+                  media="(min-width: 600px)"><img
+                  src="https://publish-p107857-e1299068.adobeaemcloud.com/content/dam/jmp/images/design/home/jmp-anthem-thumbnail.png">
+              </picture>
+            </a></div>
+          <div>
+            <h4>Wo Ihre Entdeckungsreise beginnt</h4>
+          </div>
+        </div>
+      </div>
+          </div>
+        </main>
+        <footer></footer>
+      </body>
+      `;
+
+    html = collapseWhitespace(html);
+    const yDoc = new Y.Doc();
+    aem2doc(html, yDoc);
+    const result = doc2aem(yDoc);
+    assert.equal(collapseWhitespace(result), html);
+  });
+
+  it('image links 2', async () => {
+    let html = `
+<body>
+  <header></header>
+  <main>
+    <div>
+      <a href="https://www.adobe.com" title="Go Home">
+        <picture>
+          <source srcset="https://content.da.live/aemsites/da-block-collection/drafts/ccc/dock.jpg">
+          <source srcset="https://content.da.live/aemsites/da-block-collection/drafts/ccc/dock.jpg"
+            media="(min-width: 600px)"><img
+            src="https://content.da.live/aemsites/da-block-collection/drafts/ccc/dock.jpg">
+        </picture>
+      </a>
+    </div>
+  </main>
+  <footer></footer>
+</body>`;
+
+    html = collapseWhitespace(html);
+    const yDoc = new Y.Doc();
+    aem2doc(html, yDoc);
+    const result = doc2aem(yDoc);
+    assert.equal(collapseWhitespace(result), html);
+  });
+
+  it('picture inside a table', async () => {
+    let html = `
+<body>
+  <header></header>
+  <main>
+    <div>
+      <div class="columns">
+        <div>
+          <div>
+            <a href="https://adobe.com/blah/blah" title="dock">
+              <picture>
+                <source srcset="https://content.da.live/aemsites/da-block-collection/drafts/ccc/dock.jpg">
+                <source srcset="https://content.da.live/aemsites/da-block-collection/drafts/ccc/dock.jpg" media="(min-width: 600px)">
+                <img src="https://content.da.live/aemsites/da-block-collection/drafts/ccc/dock.jpg">
+              </picture>
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+  <footer></footer>
+</body>`;
+
+    html = collapseWhitespace(html);
+    const yDoc = new Y.Doc();
+    aem2doc(html, yDoc);
+    const result = doc2aem(yDoc);
+    assert.equal(collapseWhitespace(result), html);
+  });
+
+  it('handles mixed content with image links', async () => {
+    const html = `
+<body>
+  <header></header>
+  <main><div>
+    <h1>Title</h1>
+    <p>Text before</p>
+    <a href="https://example.com" title="Mixed">
+      <picture>
+        <source srcset="https://example.com/image.jpg">
+        <source srcset="https://example.com/image.jpg" media="(min-width: 600px)">
+        <img src="https://example.com/image.jpg" alt="Mixed">
+      </picture>
+    </a>
+    <p>Text after</p>
+  </div></main>
+  <footer></footer>
+</body>`;
+    const yDoc = new Y.Doc();
+    aem2doc(html, yDoc);
+    const result = doc2aem(yDoc);
+    assert.equal(collapseWhitespace(result), collapseWhitespace(html));
+  });
+
+  it('handles image links in regional edits', async () => {
+    const html = `
+<body>
+  <header></header>
+  <main><div>
+    <da-loc-deleted>
+      <a href="https://old.example.com" title="Old">
+        <picture>
+          <source srcset="https://old.example.com/image.jpg">
+          <source srcset="https://old.example.com/image.jpg" media="(min-width: 600px)">
+          <img src="https://old.example.com/image.jpg" alt="Old">
+        </picture>
+      </a>
+    </da-loc-deleted>
+    <da-loc-added>
+      <a href="https://new.example.com" title="New">
+        <picture>
+          <source srcset="https://new.example.com/image.jpg">
+          <source srcset="https://new.example.com/image.jpg" media="(min-width: 600px)">
+          <img src="https://new.example.com/image.jpg" alt="New">
+        </picture>
+      </a>
+    </da-loc-added>
+  </div></main>
+  <footer></footer>
+</body>`;
+    const yDoc = new Y.Doc();
+    aem2doc(html, yDoc);
+    const result = doc2aem(yDoc);
+    assert.equal(collapseWhitespace(result), collapseWhitespace(html));
   });
 });
 
