@@ -18,7 +18,6 @@ class_name = "DocRoom"
 tag = "v1" # Should be unique for each entry
 new_classes = ["DocRoom"]
 
-
 [env.stage]
 vars = { ENVIRONMENT = "stage", VERSION = "@@VERSION@@" }
 
