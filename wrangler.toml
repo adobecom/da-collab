@@ -1,31 +1,46 @@
 name = "da-collab"
+main = "src/edge.js"
 workers_dev = true
 compatibility_date = "2023-10-30"
 
-main = "src/edge.js"
+
+vars = { ENVIRONMENT = "production", VERSION = "@@VERSION@@" }
 
 services = [
   { binding = "daadmin", service = "da-admin" }
 ]
 
-[dev]
-port = 4711
-
-[durable_objects]
-bindings = [
-  { name = "rooms", class_name = "DocRoom" },
-]
-
-[[migrations]]
-tag = "v1" # Should be unique for each entry
-new_classes = ["DocRoom"]
+[[env.stage.durable_objects.bindings]]
+name = "rooms"
+class_name = "DocRoom"
 
 
 [env.stage]
+vars = { ENVIRONMENT = "stage", VERSION = "@@VERSION@@" }
+
 services = [
   { binding = "daadmin", service = "da-admin-stage" }
 ]
 
-durable_objects.bindings = [
-  { name = "rooms", class_name = "DocRoom" },
+[[env.stage.durable_objects.bindings]]
+name = "rooms"
+class_name = "DocRoom"
+
+
+[env.dev]
+vars = { ENVIRONMENT = "dev", VERSION = "@@VERSION@@" }
+
+services = [
+  { binding = "daadmin", service = "da-admin" }
 ]
+
+[[env.dev.durable_objects.bindings]]
+name = "rooms"
+class_name = "DocRoom"
+
+[[env.dev.migrations]]
+tag = "v1" # Should be unique for each entry
+new_classes = ["DocRoom"]
+
+[dev]
+port = 4711

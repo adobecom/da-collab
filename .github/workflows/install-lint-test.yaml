@@ -1,46 +1,53 @@
-name: Install, lint, and test
-on:
-  push:
-    branches:
-      - main
-  pull_request:
-    types: [opened, synchronize, reopened]
+name: Build & Test Deploy
+on: [push]
+
+env:
+  CI_BRANCH: ${{ github.ref_name }}
+
+permissions:
+  id-token: write
+  contents: write  # semantic-release-dry verifies the write permissions
+  issues: read # needed by semantic-release
+  pull-requests: write # needed by semantic-release
+
 jobs:
-  run-tests:
-    name: Running tests
+  test:
+    name: Test
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        node-version: [20.x]
+    if: github.ref != 'refs/heads/adobe-infra'
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 2
+      - uses: actions/checkout@v4
+      - name: Use Node.js 22.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+      - run: npm install
+      - run: npm test
 
-    - name: Set up Node.js ${{ matrix.node-version }}
-      uses: actions/setup-node@v4
-      with:
-        node-version: ${{ matrix.node-version }}
-
-    - name: Install dependencies
-      run: npm ci
-
-    - name: Lint the code
-      run: npm run lint
-
-    - name: Run the tests
-      run: npm test
-
-    - name: Setup LCOV
-      uses: hrishikesh-kadam/setup-lcov@v1
-
-    - name: Report code coverage
-      uses: zgosalvez/github-actions-report-lcov@v4
-      with:
-        coverage-files: coverage/lcov.info
-        minimum-coverage: 85
-        artifact-name: code-coverage-report
-        github-token: ${{ secrets.GITHUB_TOKEN }}
-        update-comment: true
-
+  test-deploy:
+    name: Test Deploy
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js 22.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+      - run: npm install
+      - name: extracting last commit message
+        run: |
+          echo "CI_LAST_COMMIT_MSG=$(git show -s --format="%s")" >> $GITHUB_ENV
+          echo CI_LAST_COMMIT_MSG
+      - name: Branch Deploy
+        id: deploy-worker
+        uses: cloudflare/wrangler-action@v3
+        with:
+          preCommands: node prepare-deploy.js
+          command: deploy -e stage -c wrangler-versioned.toml
+          apiToken: ${{ secrets.CLOUDFLARE_AUTH }}
+          accountId: ${{secrets.CLOUDFLARE_ACCOUNT}}
+      - name: Semantic Release (Dry Run)
+        run: npm run semantic-release-dry
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

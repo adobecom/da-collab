@@ -9,6 +9,9 @@ lerna-debug.log*
 
 junit
 
+# Filesystem
+.DS_Store
+
 # Diagnostic reports (https://nodejs.org/api/report.html)
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
@@ -134,3 +137,8 @@ dist
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
+
+.vscode
+
+# Generated files
+wrangler-versioned.toml
