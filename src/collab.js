@@ -90,9 +90,52 @@ function blockToTable(child, children) {
   });
 }
 
+/**
+ * Recursively traverses a node tree and fixes image links by moving link attributes to img elements
+ */
+function fixImageLinks(node) {
+  if (!node) return node;
+
+  // Recursively process children first
+  if (node.children) {
+    node.children.forEach((child) => {
+      if (child.tagName === 'a' && child.children?.length > 0) {
+        const { href, title } = child.properties;
+
+        child.children.forEach((linkChild) => {
+          if (linkChild.tagName === 'picture') {
+            linkChild.children.forEach((pictureChild) => {
+              if (pictureChild.tagName === 'img') {
+                // eslint-disable-next-line no-param-reassign
+                pictureChild.properties = {
+                  ...pictureChild.properties,
+                  href,
+                  title,
+                };
+              }
+            });
+          } else if (linkChild.tagName === 'img') {
+            // eslint-disable-next-line no-param-reassign
+            linkChild.properties = {
+              ...linkChild.properties,
+              href,
+              title,
+            };
+          }
+        });
+      } else {
+        fixImageLinks(child);
+      }
+    });
+  }
+
+  return node;
+}
+
 export function aem2doc(html, ydoc) {
   const tree = fromHtml(html, { fragment: true });
   const main = tree.children.find((child) => child.tagName === 'main');
+  fixImageLinks(main);
   (main.children || []).forEach((parent) => {
     if (parent.tagName === 'div' && parent.children) {
       const children = [];
@@ -114,15 +157,6 @@ export function aem2doc(html, ydoc) {
           // eslint-disable-next-line no-param-reassign
           child.children = locChildren;
           children.push(child);
-        } else if (child.tagName === 'a' && child.children.length === 1 && child.children[0].tagName === 'img') {
-          // if an img is wrapped by a link, add the link properties to the img and remove the link
-          // due to https://github.com/yjs/y-prosemirror/issues/165
-          const { href, title } = child.properties;
-          const img = child.children[0];
-          img.properties.href = href;
-          img.properties.title = title;
-          children.push(img);
-          modified = true;
         } else {
           children.push(child);
         }
@@ -204,8 +238,7 @@ export function aem2doc(html, ydoc) {
           if (name === 'colspan') {
             // when `tree` is created using `fromHtml` in hast-util-from-html
             // that then calls fromParse5 in hast-util-from-parse5
-            // which converts the `colspan` attribute to `colSpan`
-            // eslint-disable-next-line no-param-reassign
+            // which converts the `colspan` attribute to `colSpan`            // eslint-disable-next-line no-param-reassign
             name = 'colSpan';
           }
           return target.properties ? target.properties[name] : undefined;
