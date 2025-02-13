@@ -5,29 +5,29 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "lint:js": "eslint .",
+    "parpare": "husky",
     "lint": "npm run lint:js",
-    "dev": "wrangler dev src/edge.js",
-    "deploy": "wrangler deploy src/edge.js",
-    "deploy:stage": "wrangler deploy --env stage src/edge.js",
-    "test": "c8 mocha --exit # --exit is needed because some test code triggers async listeners"
+    "lint:js": "eslint . --ext js,cjs,mjs",
+    "test": "c8 mocha --spec=test/**/*.test.js --exit # --exit is needed because some test code triggers async listeners",
+    "start": "npm run dev",
+    "dev": "wrangler dev --env dev",
+    "deploy": "wrangler deploy",
+    "deploy:stage": "node prepare-deploy.js && wrangler deploy -e stage -c wrangler-versioned.toml",
+    "deploy:production": "node prepare-deploy.js && wrangler deploy -c wrangler-versioned.toml",
+    "semantic-release": "semantic-release",
+    "semantic-release-dry": "semantic-release --dry-run --no-ci --branches $CI_BRANCH"
+
   },
   "mocha": {
     "reporter": "mocha-multi-reporters",
     "reporter-options": "configFile=.mocha-multi.json"
   },
   "author": "",
-  "license": "Apache-2.0",
-  "devDependencies": {
-    "@adobe/eslint-config-helix": "2.0.6",
-    "c8": "^9.1.0",
-    "eslint": "8.56.0",
-    "esmock": "^2.6.4",
-    "mocha": "^10.2.0",
-    "mocha-junit-reporter": "^2.2.1",
-    "mocha-multi-reporters": "^1.5.1",
-    "wrangler": "^3.99.0"
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/adobe/da-collab"
   },
+  "license": "Apache-2.0",
   "dependencies": {
     "lib0": "^0.2.52",
     "hast-util-from-html": "^2.0.1",
@@ -42,5 +42,28 @@
     "y-prosemirror": "^1.2.3",
     "y-protocols": "^1.0.5",
     "yjs": "^13.5.0"
+  },
+  "devDependencies": {
+    "@adobe/eslint-config-helix": "2.0.6",
+    "@semantic-release/changelog": "^6.0.3",
+    "@semantic-release/commit-analyzer": "^13.0.1",
+    "@semantic-release/exec": "^7.0.3",
+    "@semantic-release/git": "^10.0.1",
+    "@semantic-release/github": "^11.0.1",
+    "@semantic-release/npm": "^12.0.1",
+    "@semantic-release/release-notes-generator": "^14.0.3",
+    "c8": "^9.1.0",
+    "eslint": "8.56.0",
+    "esmock": "^2.6.4",
+    "husky": "^9.1.7",
+    "lint-staged": "^15.4.3",
+    "mocha": "^10.2.0",
+    "mocha-junit-reporter": "^2.2.1",
+    "mocha-multi-reporters": "^1.5.1",
+    "semantic-release": "^24.2.2",
+    "wrangler": "^3.99.0"
+  },
+  "lint-staged": {
+    "*.(js|cjs|mjs)": "eslint"
   }
 }
