@@ -10,9 +10,13 @@ services = [
   { binding = "daadmin", service = "da-admin" }
 ]
 
-[[env.stage.durable_objects.bindings]]
+[[durable_objects.bindings]]
 name = "rooms"
 class_name = "DocRoom"
+
+[[migrations]]
+tag = "v1" # Should be unique for each entry
+new_classes = ["DocRoom"]
 
 
 [env.stage]
@@ -25,6 +29,10 @@ services = [
 [[env.stage.durable_objects.bindings]]
 name = "rooms"
 class_name = "DocRoom"
+
+[[env.stage.migrations]]
+tag = "v1" # Should be unique for each entry
+new_classes = ["DocRoom"]
 
 
 [env.dev]
